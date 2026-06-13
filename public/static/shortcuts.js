@@ -23,7 +23,7 @@ export const ACTIONS = [
   { id: 'finishPolygonFree', label: '자유 완성 (각도순 자동 정렬)', defaultKey: 'W', category: '그리기' },
   { id: 'cancelDrawing', label: '그리기 취소', defaultKey: 'Escape', category: '그리기' },
   { id: 'removeLastPoint', label: '마지막 점 취소', defaultKey: 'E', category: '그리기' },
-  { id: 'freehandMode', label: '자유 곡선 (누르고 드래그)', defaultKey: 'S', category: '그리기', holdable: true },
+  { id: 'freehandMode', label: '자유 곡선 (누르고 이동)', defaultKey: 'S', category: '그리기', holdable: true },
 
   // 도구
   { id: 'toolDraw', label: '그리기 도구', defaultKey: 'I', category: '도구' },
@@ -59,188 +59,104 @@ const ACTION_MAP = new Map(ACTIONS.map(a => [a.id, a]))
  * 예: 'KeyD' → 'D', 'Digit1' → '1', 'Equal' → '+',
  *     'Minus' → '-', 'Enter' → 'Enter', 'Space' → 'Space'
  */
-function codeToLabel(code, shiftKey) {
-  if (!code) return null
-
-  // KeyA ~ KeyZ → A ~ Z
-  if (code.startsWith('Key') && code.length === 4) {
-    return code.slice(3)
-  }
-  // Digit0 ~ Digit9 → 0 ~ 9 (numpad 별도)
-  if (code.startsWith('Digit') && code.length === 6) {
-    return code.slice(5)
-  }
-  if (code.startsWith('Numpad')) {
-    const rest = code.slice(6)
-    // Numpad0~9는 그냥 숫자처럼 취급
-    if (/^\d$/.test(rest)) return rest
-    // NumpadAdd, Subtract 등은 일반 +, -와 통합
-    if (rest === 'Add') return '+'
-    if (rest === 'Subtract') return '-'
-    if (rest === 'Multiply') return '*'
-    if (rest === 'Divide') return '/'
-    if (rest === 'Decimal') return '.'
-    if (rest === 'Enter') return 'Enter'
-    return 'Num' + rest
-  }
-
-  // 특수 키 매핑
-  const map = {
-    'Space': 'Space',
-    'Enter': 'Enter',
-    'Escape': 'Escape',
-    'Backspace': 'Backspace',
-    'Delete': 'Delete',
-    'Tab': 'Tab',
-    'CapsLock': 'CapsLock',
-    'ArrowUp': '↑',
-    'ArrowDown': '↓',
-    'ArrowLeft': '←',
-    'ArrowRight': '→',
-    'Home': 'Home',
-    'End': 'End',
-    'PageUp': 'PageUp',
-    'PageDown': 'PageDown',
-    'Insert': 'Insert',
-    // 기호 키 (Shift 안 누른 기준의 라벨)
-    'Minus': '-',
-    'Equal': '+',     // = 키, 보통 줌인용으로 +로 표기
-    'BracketLeft': '[',
-    'BracketRight': ']',
-    'Backslash': '\\',
-    'Semicolon': ';',
-    'Quote': "'",
-    'Comma': ',',
-    'Period': '.',
-    'Slash': '/',
-    'Backquote': '`',
-  }
-  if (map[code]) return map[code]
-
-  // F1 ~ F12
-  if (/^F\d+$/.test(code)) return code
-
-  // 그 외 (예: ContextMenu 등) - 그대로
-  return code
-}
-
-/**
- * 키 이벤트를 정규화된 키 문자열로 변환
- * 한/영 상태와 무관하게 물리적 키 위치로 정규화
- * 예: Ctrl+Z, Shift+Enter, A, Space, +
- */
-export function normalizeKey(e) {
-  // 수정자 키 자체는 무시
-  if (e.code === 'ControlLeft' || e.code === 'ControlRight' ||
-      e.code === 'ShiftLeft' || e.code === 'ShiftRight' ||
-      e.code === 'AltLeft' || e.code === 'AltRight' ||
-      e.code === 'MetaLeft' || e.code === 'MetaRight') {
-    return null
-  }
-
-  const label = codeToLabel(e.code, e.shiftKey)
-  if (!label) return null
-
+export function normalizeKeyEvent(e) {
   const parts = []
-  if (e.ctrlKey || e.metaKey) parts.push('Ctrl')
-  if (e.shiftKey) parts.push('Shift')
+  if (e.ctrlKey) parts.push('Ctrl')
   if (e.altKey) parts.push('Alt')
-  parts.push(label)
+  if (e.shiftKey) parts.push('Shift')
+
+  let key = ''
+  const code = e.code
+
+  if (/^Key[A-Z]$/.test(code)) key = code.slice(3)
+  else if (/^Digit[0-9]$/.test(code)) key = code.slice(5)
+  else if (/^Numpad[0-9]$/.test(code)) key = code.slice(6)
+  else if (code === 'NumpadAdd') key = '+'
+  else if (code === 'NumpadSubtract') key = '-'
+  else if (code === 'Equal') key = '+'
+  else if (code === 'Minus') key = '-'
+  else if (code === 'BracketLeft') key = '['
+  else if (code === 'BracketRight') key = ']'
+  else if (code === 'Backslash') key = '\\'
+  else if (code === 'Semicolon') key = ';'
+  else if (code === 'Quote') key = "'"
+  else if (code === 'Comma') key = ','
+  else if (code === 'Period') key = '.'
+  else if (code === 'Slash') key = '/'
+  else if (code === 'Backquote') key = '`'
+  else if (code === 'Space') key = 'Space'
+  else if (code === 'Escape') key = 'Escape'
+  else if (code === 'Enter') key = 'Enter'
+  else if (code === 'Backspace') key = 'Backspace'
+  else if (code === 'Delete') key = 'Delete'
+  else if (code.startsWith('Arrow')) key = code.replace('Arrow', '')
+  else if (/^F\d+$/.test(code)) key = code
+  else key = e.key.length === 1 ? e.key.toUpperCase() : e.key
+
+  // modifier 자체만 누른 경우는 무시
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return ''
+
+  // key가 이미 Ctrl 등과 중복되지 않게
+  if (!['Ctrl', 'Alt', 'Shift'].includes(key)) parts.push(key)
   return parts.join('+')
 }
 
-/**
- * 저장된 단축키 설정 로드 (기본값과 머지)
- */
-export function loadShortcuts() {
-  let saved = {}
+/** 문자열 키를 표시용으로 정리 */
+export function formatKey(key) {
+  if (!key) return ''
+  return key.replace('Ctrl', 'Ctrl').replace('Space', 'Space')
+}
+
+/** 기본 키맵 */
+export function getDefaultKeymap() {
+  const map = {}
+  for (const action of ACTIONS) map[action.id] = action.defaultKey
+  return map
+}
+
+/** 저장된 키맵 로드 (없으면 기본값) */
+export function loadKeymap() {
   try {
-    const storedVersion = parseInt(localStorage.getItem(VERSION_KEY) || '1', 10)
-    // 스키마 버전이 다르면 옛 저장값 폐기 → 모두 새 기본값 사용
-    if (storedVersion === SCHEMA_VERSION) {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) saved = JSON.parse(raw)
-    } else {
-      localStorage.removeItem(STORAGE_KEY)
+    const version = localStorage.getItem(VERSION_KEY)
+    if (version !== String(SCHEMA_VERSION)) {
       localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(getDefaultKeymap()))
+      return getDefaultKeymap()
     }
-  } catch (e) {
-    console.warn('Shortcut load failed:', e)
-  }
-  const result = {}
-  for (const action of ACTIONS) {
-    result[action.id] = saved[action.id] || action.defaultKey
-  }
-  return result
-}
-
-/**
- * 단축키 설정 저장
- */
-export function saveShortcuts(bindings) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bindings))
-    localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
-  } catch (e) {
-    console.warn('Shortcut save failed:', e)
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return getDefaultKeymap()
+    const saved = JSON.parse(raw)
+    return { ...getDefaultKeymap(), ...saved }
+  } catch {
+    return getDefaultKeymap()
   }
 }
 
-/**
- * 기본값 복원
- */
-export function resetShortcuts() {
-  const result = {}
-  for (const action of ACTIONS) {
-    result[action.id] = action.defaultKey
-  }
-  saveShortcuts(result)
-  return result
+/** 키맵 저장 */
+export function saveKeymap(keymap) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(keymap))
+  localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
 }
 
-/**
- * 키 입력에서 액션 id 찾기
- * @returns {Object|null} { actionId, isHoldable }
- */
-export function findAction(bindings, normalized) {
-  if (!normalized) return null
-  for (const [id, key] of Object.entries(bindings)) {
-    if (key === normalized) {
-      const action = ACTION_MAP.get(id)
-      return { actionId: id, isHoldable: !!(action && action.holdable) }
-    }
+/** 키가 사용 금지인지 */
+export function isForbiddenKey(key) {
+  return FORBIDDEN_KEYS.includes(key)
+}
+
+/** 해당 key에 바인딩된 action id 찾기 */
+export function findActionByKey(keymap, key) {
+  for (const [actionId, boundKey] of Object.entries(keymap)) {
+    if (boundKey === key) return actionId
   }
   return null
 }
 
-/**
- * 표시용 키 라벨 (Mac/Win 자동 분기)
- */
-export function displayKey(key) {
-  if (!key) return ''
-  const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
-  if (isMac) {
-    return key
-      .replace(/Ctrl/g, '⌘')
-      .replace(/Alt/g, '⌥')
-      .replace(/Shift/g, '⇧')
-  }
-  return key
+/** action id → action 정보 */
+export function getAction(actionId) {
+  return ACTION_MAP.get(actionId)
 }
 
-/**
- * 카테고리별로 액션 그룹화
- */
-export function groupActionsByCategory() {
-  const groups = {}
-  for (const action of ACTIONS) {
-    if (!groups[action.category]) groups[action.category] = []
-    groups[action.category].push(action)
-  }
-  return groups
-}
-
-/** FORBIDDEN_KEYS 체크 */
-export function isForbidden(key) {
-  return FORBIDDEN_KEYS.includes(key)
+/** holdable action인지 */
+export function isHoldable(actionId) {
+  return ACTION_MAP.get(actionId)?.holdable || false
 }
