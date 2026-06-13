@@ -1,0 +1,541 @@
+/* ================================================================
+   Spine Annotator 매뉴얼 페이지 스타일
+   - 기존 앱 스타일과 독립 (인쇄 친화적)
+   - 다크 테마 + 읽기 좋은 본문 폭
+   ================================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0f1419;
+  --bg-card: #1a2028;
+  --bg-elev: #232b35;
+  --border: #2d3744;
+  --text: #e6edf3;
+  --text-dim: #9da9b5;
+  --primary: #4f9ef8;
+  --primary-dim: #6db1ff;
+  --accent: #7ee787;
+  --warn: #f0b35e;
+  --danger: #ff7a7a;
+  --kbd-bg: #2a3340;
+  --kbd-border: #3a4554;
+  --code-bg: #0d1117;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard",
+    "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ----------------------------------------------------------------
+   상단 헤더
+   ---------------------------------------------------------------- */
+.manual-header {
+  background: linear-gradient(135deg, #1a2734 0%, #0f1419 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 32px 0;
+}
+
+.manual-header-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  margin-bottom: 8px;
+  transition: color 0.15s;
+}
+.back-link:hover {
+  color: var(--primary-dim);
+}
+
+.manual-header h1 {
+  font-size: 28px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.manual-header h1 i {
+  color: var(--primary);
+  margin-right: 8px;
+}
+
+.manual-meta {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* ----------------------------------------------------------------
+   목차 (sticky)
+   ---------------------------------------------------------------- */
+.manual-toc {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  background: rgba(26, 32, 40, 0.92);
+}
+
+.manual-toc strong {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.manual-toc ol {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  counter-reset: toc;
+}
+
+.manual-toc li {
+  counter-increment: toc;
+}
+
+.manual-toc a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--bg-elev);
+  transition: all 0.15s;
+  display: inline-block;
+}
+.manual-toc a::before {
+  content: counter(toc) ". ";
+  color: var(--primary);
+  font-weight: 600;
+}
+.manual-toc a:hover {
+  background: var(--primary);
+  color: #fff;
+}
+.manual-toc a:hover::before {
+  color: #fff;
+}
+
+/* ----------------------------------------------------------------
+   본문
+   ---------------------------------------------------------------- */
+.manual-main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+section {
+  margin-bottom: 56px;
+  scroll-margin-top: 80px; /* sticky TOC 만큼 띄우기 */
+}
+
+h2 {
+  font-size: 22px;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 16px;
+  margin: 24px 0 10px;
+  color: var(--primary-dim);
+  font-weight: 600;
+}
+
+p {
+  margin: 10px 0;
+  color: var(--text);
+}
+
+ul, ol {
+  margin: 10px 0;
+  padding-left: 24px;
+}
+li { margin: 4px 0; }
+
+strong { color: var(--text); font-weight: 600; }
+em { color: var(--primary-dim); font-style: normal; font-weight: 500; }
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Monaco, Consolas, "Courier New", monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+code.block {
+  display: block;
+  padding: 12px 14px;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+pre.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ----------------------------------------------------------------
+   kbd (단축키 표시)
+   ---------------------------------------------------------------- */
+kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: var(--text);
+  margin: 0 1px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  min-width: 22px;
+  text-align: center;
+}
+
+/* ----------------------------------------------------------------
+   UI 버튼 모방 (매뉴얼 안에서 헤더 버튼 표시할 때)
+   ---------------------------------------------------------------- */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--text);
+  vertical-align: middle;
+}
+.ui-btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.ui-btn i {
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+/* ----------------------------------------------------------------
+   특수 박스
+   ---------------------------------------------------------------- */
+.callout {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  border-radius: 8px;
+  border-left: 4px solid;
+  background: var(--bg-card);
+}
+.callout > i {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.callout > div { flex: 1; }
+.callout.info {
+  border-color: var(--primary);
+}
+.callout.info > i { color: var(--primary); }
+.callout.tip {
+  border-color: var(--accent);
+}
+.callout.tip > i { color: var(--accent); }
+.callout.warn {
+  border-color: var(--warn);
+}
+.callout.warn > i { color: var(--warn); }
+
+/* ----------------------------------------------------------------
+   feature-list (개요 페이지)
+   ---------------------------------------------------------------- */
+.feature-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.feature-list li {
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.feature-list i {
+  color: var(--primary);
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+/* ----------------------------------------------------------------
+   steps (절차)
+   ---------------------------------------------------------------- */
+.steps {
+  list-style: none;
+  padding: 0;
+  counter-reset: step;
+}
+.steps > li {
+  position: relative;
+  padding: 12px 16px 12px 48px;
+  margin: 8px 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  counter-increment: step;
+}
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: 24px;
+  height: 24px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+.steps > li > strong:first-child {
+  display: block;
+  font-size: 14.5px;
+  color: var(--primary-dim);
+  margin-bottom: 4px;
+}
+.steps > li p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.steps > li p strong { color: var(--text); }
+.steps ul {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+}
+
+/* ----------------------------------------------------------------
+   action-table (동작 표)
+   ---------------------------------------------------------------- */
+.action-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.action-table th,
+.action-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+.action-table tbody tr:last-child td,
+.action-table tr:last-child td {
+  border-bottom: none;
+}
+.action-table thead th {
+  background: var(--bg-elev);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.action-table td:first-child {
+  width: 38%;
+  color: var(--primary-dim);
+  font-weight: 500;
+}
+.action-table tr:hover td {
+  background: rgba(79, 158, 248, 0.04);
+}
+
+/* ----------------------------------------------------------------
+   뱃지 (AP/LAT, 라벨 점)
+   ---------------------------------------------------------------- */
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 3px;
+  color: #fff;
+  vertical-align: middle;
+}
+.badge.ap { background: #4f9ef8; }
+.badge.lat { background: #b46df0; }
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+.dot.gray { background: #5a6675; }
+.dot.green { background: var(--accent); }
+
+/* ----------------------------------------------------------------
+   details (FAQ)
+   ---------------------------------------------------------------- */
+details {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  margin: 8px 0;
+  overflow: hidden;
+}
+details summary {
+  cursor: pointer;
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--text);
+  list-style: none;
+  position: relative;
+  user-select: none;
+  transition: background 0.1s;
+}
+details summary::-webkit-details-marker { display: none; }
+details summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--primary);
+  transition: transform 0.15s;
+}
+details[open] summary::before {
+  transform: rotate(90deg);
+}
+details summary:hover {
+  background: rgba(79, 158, 248, 0.04);
+}
+details[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+details ul, details ol, details p {
+  padding: 0 16px 14px 40px;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+details ul, details ol {
+  padding-left: 56px;
+}
+
+/* ----------------------------------------------------------------
+   푸터
+   ---------------------------------------------------------------- */
+.manual-footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.manual-footer i {
+  color: var(--primary);
+}
+
+/* ----------------------------------------------------------------
+   반응형
+   ---------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .manual-header h1 { font-size: 22px; }
+  .manual-toc ol { gap: 4px 8px; }
+  .manual-toc a { font-size: 12px; padding: 3px 8px; }
+  h2 { font-size: 19px; }
+  h3 { font-size: 15px; }
+  body { font-size: 14px; }
+  .steps > li { padding-left: 44px; }
+  .action-table { font-size: 13px; }
+  .action-table th, .action-table td { padding: 6px 10px; }
+}
+
+/* ----------------------------------------------------------------
+   인쇄
+   ---------------------------------------------------------------- */
+@media print {
+  body { background: #fff; color: #000; }
+  .manual-toc, .back-link { display: none; }
+  .manual-header { background: #fff; color: #000; border-bottom: 2px solid #000; }
+  .manual-header h1 { color: #000; }
+  section { page-break-inside: avoid; }
+  details { border: 1px solid #999; }
+  details:not([open]) { display: block; }
+  details summary { background: #f5f5f5; color: #000; }
+  details[open] summary { background: #eee; }
+  pre.code-block { background: #f5f5f5; color: #000; border: 1px solid #999; }
+  code { background: #f5f5f5; color: #000; }
+  kbd { background: #f0f0f0; color: #000; border-color: #999; }
+}
