@@ -374,9 +374,9 @@ export class SpineAnnotator {
     } else if (this.tool === 'draw') {
       if (this.drawing) {
         const n = this.currentPoints.length / 2
-        text = `점 ${n}개 — Q: 순서대로 완성 / W: 각도순 정렬 완성 / E: 마지막 점 취소 / S(드래그): 자유곡선`
+        text = `점 ${n}개 — Q: 순서대로 완성 / W: 각도순 정렬 완성 / E: 마지막 점 취소 / S+마우스 이동: 자유곡선`
       } else {
-        text = '그리기 모드 — 클릭으로 점 추가 / S 누른 채 드래그: 자유곡선'
+        text = '그리기 모드 — 클릭으로 점 추가 / S 누른 채 마우스 이동: 자유곡선'
       }
     } else if (this.tool === 'edit') {
       if (this.drawing) {

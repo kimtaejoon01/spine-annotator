@@ -711,7 +711,7 @@ app.get('/manual', (c) => {
         <li><kbd>Q</kbd>로 완성</li>
       </ol>
       <p>
-        <strong>혼합 사용 가능:</strong> 직선 부분은 클릭, 곡선 부분은 S+드래그 — 한 폴리곤 안에서 자유롭게 섞어도 됩니다.
+        <strong>혼합 사용 가능:</strong> 직선 부분은 클릭, 곡선 부분은 S+마우스 이동 — 한 폴리곤 안에서 자유롭게 섞어도 됩니다.
       </p>
 
       <div class="callout tip">
@@ -816,7 +816,7 @@ app.get('/manual', (c) => {
         <tr><td><kbd>Q</kbd></td><td>완성 (순서대로 연결)</td></tr>
         <tr><td><kbd>W</kbd></td><td>자유 완성 (각도순 자동 정렬)</td></tr>
         <tr><td><kbd>E</kbd></td><td>마지막 점 취소</td></tr>
-        <tr><td><kbd>S</kbd> + 드래그</td><td>🖊️ 자유곡선 (누르고 있는 동안 점 자동 추가)</td></tr>
+        <tr><td><kbd>S</kbd> + 마우스 이동</td><td>🖊️ 자유곡선 (S 누른 채 마우스 이동으로 점 자동 추가)</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>그리기 전체 취소</td></tr>
       </table>
 
