@@ -27,7 +27,8 @@ function patchOrSkip(text, pattern, replacement, label, alreadyPattern) {
   return text
 }
 
-let s = read(annotatorFile)
+// Windows에서 받은 파일은 CRLF 줄바꿈일 수 있어 패턴 매칭 전에 LF로 통일합니다.
+let s = read(annotatorFile).replace(/\r\n/g, '\n')
 
 // Do not start freehand from mouse-down anymore.
 s = patchOrSkip(
@@ -127,7 +128,7 @@ console.log('OK public/static/annotator.js freehand now uses S + mouse move only
 
 for (const file of docsFiles) {
   if (!fs.existsSync(file)) continue
-  let t = read(file)
+  let t = read(file).replace(/\r\n/g, '\n')
   t = t.replaceAll('자유 곡선 (누르고 드래그)', '자유 곡선 (누르고 이동)')
   t = t.replaceAll('S+드래그', 'S+마우스 이동')
   t = t.replaceAll('<kbd>S</kbd> + 드래그', '<kbd>S</kbd> + 마우스 이동')
