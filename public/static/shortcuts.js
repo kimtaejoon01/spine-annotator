@@ -101,11 +101,17 @@ export function normalizeKeyEvent(e) {
   return parts.join('+')
 }
 
+/** 기존 app.js 호환 이름 */
+export const normalizeKey = normalizeKeyEvent
+
 /** 문자열 키를 표시용으로 정리 */
 export function formatKey(key) {
   if (!key) return ''
-  return key.replace('Ctrl', 'Ctrl').replace('Space', 'Space')
+  return String(key).replace('Ctrl', 'Ctrl').replace('Space', 'Space')
 }
+
+/** 기존 app.js 호환 이름 */
+export const displayKey = formatKey
 
 /** 기본 키맵 */
 export function getDefaultKeymap() {
@@ -132,16 +138,32 @@ export function loadKeymap() {
   }
 }
 
+/** 기존 app.js 호환 이름 */
+export const loadShortcuts = loadKeymap
+
 /** 키맵 저장 */
 export function saveKeymap(keymap) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(keymap))
   localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
 }
 
+/** 기존 app.js 호환 이름 */
+export const saveShortcuts = saveKeymap
+
+/** 기본 단축키로 초기화 */
+export function resetShortcuts() {
+  const defaults = getDefaultKeymap()
+  saveKeymap(defaults)
+  return defaults
+}
+
 /** 키가 사용 금지인지 */
 export function isForbiddenKey(key) {
   return FORBIDDEN_KEYS.includes(key)
 }
+
+/** 기존 app.js 호환 이름 */
+export const isForbidden = isForbiddenKey
 
 /** 해당 key에 바인딩된 action id 찾기 */
 export function findActionByKey(keymap, key) {
@@ -151,6 +173,9 @@ export function findActionByKey(keymap, key) {
   return null
 }
 
+/** 기존 app.js 호환 이름 */
+export const findAction = findActionByKey
+
 /** action id → action 정보 */
 export function getAction(actionId) {
   return ACTION_MAP.get(actionId)
@@ -159,4 +184,14 @@ export function getAction(actionId) {
 /** holdable action인지 */
 export function isHoldable(actionId) {
   return ACTION_MAP.get(actionId)?.holdable || false
+}
+
+/** 단축키 설정 UI용 category grouping */
+export function groupActionsByCategory() {
+  const grouped = {}
+  for (const action of ACTIONS) {
+    if (!grouped[action.category]) grouped[action.category] = []
+    grouped[action.category].push(action)
+  }
+  return grouped
 }
