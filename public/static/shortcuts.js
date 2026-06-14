@@ -15,7 +15,7 @@ const VERSION_KEY = 'spine-annotator:shortcuts:version'
  * label: 한국어 표시명
  * defaultKey: 기본 키 (string, 아래 normalizeKey 형식)
  * category: UI 분류
- * holdable: true면 누르고 있는 동안 동작 (Space 같은 것)
+ * holdable: true면 누르고 있는 동안 동작 (Space/S 같은 것)
  */
 export const ACTIONS = [
   // 그리기
@@ -46,27 +46,17 @@ export const ACTIONS = [
   { id: 'openShortcuts', label: '단축키 설정 열기', defaultKey: 'Ctrl+K', category: '설정' },
 ]
 
-/** 사용 불가 키 (브라우저 예약 등) */
 const FORBIDDEN_KEYS = ['F5', 'F11', 'F12', 'Tab', 'Ctrl+R', 'Ctrl+W', 'Ctrl+T', 'Ctrl+N']
-
-/** 액션 id로 빠르게 액션 찾기 */
 const ACTION_MAP = new Map(ACTIONS.map(a => [a.id, a]))
 
-/**
- * KeyboardEvent.code를 사람이 읽기 좋은 키 라벨로 변환
- * 한/영 키 상태와 무관하게 동작 (물리적 키 위치 기반)
- *
- * 예: 'KeyD' → 'D', 'Digit1' → '1', 'Equal' → '+',
- *     'Minus' → '-', 'Enter' → 'Enter', 'Space' → 'Space'
- */
-export function normalizeKeyEvent(e) {
+export function normalizeKey(e) {
   const parts = []
   if (e.ctrlKey) parts.push('Ctrl')
   if (e.altKey) parts.push('Alt')
   if (e.shiftKey) parts.push('Shift')
 
   let key = ''
-  const code = e.code
+  const code = e.code || ''
 
   if (/^Key[A-Z]$/.test(code)) key = code.slice(3)
   else if (/^Digit[0-9]$/.test(code)) key = code.slice(5)
@@ -91,102 +81,101 @@ export function normalizeKeyEvent(e) {
   else if (code === 'Delete') key = 'Delete'
   else if (code.startsWith('Arrow')) key = code.replace('Arrow', '')
   else if (/^F\d+$/.test(code)) key = code
-  else key = e.key.length === 1 ? e.key.toUpperCase() : e.key
+  else key = e.key && e.key.length === 1 ? e.key.toUpperCase() : e.key
 
-  // modifier 자체만 누른 경우는 무시
-  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return ''
-
-  // key가 이미 Ctrl 등과 중복되지 않게
+  if (!key || ['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return ''
   if (!['Ctrl', 'Alt', 'Shift'].includes(key)) parts.push(key)
   return parts.join('+')
 }
 
-/** 기존 app.js 호환 이름 */
-export const normalizeKey = normalizeKeyEvent
+// 새/옛 이름 모두 지원
+export const normalizeKeyEvent = normalizeKey
 
-/** 문자열 키를 표시용으로 정리 */
-export function formatKey(key) {
+export function displayKey(key) {
   if (!key) return ''
   return String(key).replace('Ctrl', 'Ctrl').replace('Space', 'Space')
 }
 
-/** 기존 app.js 호환 이름 */
-export const displayKey = formatKey
+export const formatKey = displayKey
 
-/** 기본 키맵 */
-export function getDefaultKeymap() {
+export function getDefaultShortcuts() {
   const map = {}
   for (const action of ACTIONS) map[action.id] = action.defaultKey
   return map
 }
 
-/** 저장된 키맵 로드 (없으면 기본값) */
-export function loadKeymap() {
+export const getDefaultKeymap = getDefaultShortcuts
+
+export function loadShortcuts() {
   try {
     const version = localStorage.getItem(VERSION_KEY)
     if (version !== String(SCHEMA_VERSION)) {
+      const defaults = getDefaultShortcuts()
       localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(getDefaultKeymap()))
-      return getDefaultKeymap()
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults))
+      return defaults
     }
+
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return getDefaultKeymap()
+    if (!raw) return getDefaultShortcuts()
+
     const saved = JSON.parse(raw)
-    return { ...getDefaultKeymap(), ...saved }
+    return { ...getDefaultShortcuts(), ...saved }
   } catch {
-    return getDefaultKeymap()
+    return getDefaultShortcuts()
   }
 }
 
-/** 기존 app.js 호환 이름 */
-export const loadShortcuts = loadKeymap
+export const loadKeymap = loadShortcuts
 
-/** 키맵 저장 */
-export function saveKeymap(keymap) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(keymap))
+export function saveShortcuts(shortcuts) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(shortcuts))
   localStorage.setItem(VERSION_KEY, String(SCHEMA_VERSION))
 }
 
-/** 기존 app.js 호환 이름 */
-export const saveShortcuts = saveKeymap
+export const saveKeymap = saveShortcuts
 
-/** 기본 단축키로 초기화 */
 export function resetShortcuts() {
-  const defaults = getDefaultKeymap()
-  saveKeymap(defaults)
+  const defaults = getDefaultShortcuts()
+  saveShortcuts(defaults)
   return defaults
 }
 
-/** 키가 사용 금지인지 */
-export function isForbiddenKey(key) {
+export function isForbidden(key) {
   return FORBIDDEN_KEYS.includes(key)
 }
 
-/** 기존 app.js 호환 이름 */
-export const isForbidden = isForbiddenKey
+export const isForbiddenKey = isForbidden
 
-/** 해당 key에 바인딩된 action id 찾기 */
-export function findActionByKey(keymap, key) {
-  for (const [actionId, boundKey] of Object.entries(keymap)) {
-    if (boundKey === key) return actionId
+/**
+ * app.js 호환 반환 형식:
+ *   { actionId: string, isHoldable: boolean, action: object }
+ */
+export function findAction(shortcuts, key) {
+  for (const [actionId, boundKey] of Object.entries(shortcuts || {})) {
+    if (boundKey === key) {
+      const action = ACTION_MAP.get(actionId)
+      if (!action) return null
+      return {
+        actionId,
+        isHoldable: Boolean(action.holdable),
+        action,
+      }
+    }
   }
   return null
 }
 
-/** 기존 app.js 호환 이름 */
-export const findAction = findActionByKey
+export const findActionByKey = findAction
 
-/** action id → action 정보 */
 export function getAction(actionId) {
   return ACTION_MAP.get(actionId)
 }
 
-/** holdable action인지 */
 export function isHoldable(actionId) {
-  return ACTION_MAP.get(actionId)?.holdable || false
+  return Boolean(ACTION_MAP.get(actionId)?.holdable)
 }
 
-/** 단축키 설정 UI용 category grouping */
 export function groupActionsByCategory() {
   const grouped = {}
   for (const action of ACTIONS) {
