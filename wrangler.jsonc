@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "spine-annotator-production",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "b912755c-58bd-4c85-b526-4ba8e9a5f076"
     }
   ]
 }
