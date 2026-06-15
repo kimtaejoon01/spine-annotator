@@ -14,10 +14,13 @@ type Bindings = {
 const api = new Hono<{ Bindings: Bindings }>()
 
 // 운영 비밀번호는 반드시 Cloudflare Pages secret(AUTH_PASSWORD) 또는 로컬 .dev.vars로 주입합니다.
+// Cloudflare secret 입력 중 앞뒤 공백/줄바꿈이 섞여도 로그인 실패하지 않도록 trim해서 비교합니다.
 function getAuthPassword(c: any) {
   const password = c.env.AUTH_PASSWORD
-  if (typeof password !== 'string' || password.trim() === '') return ''
-  return password
+  if (typeof password !== 'string') return ''
+  const trimmed = password.trim()
+  if (trimmed === '') return ''
+  return trimmed
 }
 
 // ----------------------------------------------------------------
@@ -35,7 +38,7 @@ api.use('*', async (c, next) => {
   }
   const header = c.req.header('X-Auth-Token') || ''
   const bearer = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') || ''
-  const token = header || bearer
+  const token = (header || bearer).trim()
 
   if (!token || token !== expected) {
     return c.json({ error: 'unauthorized', message: '인증이 필요합니다' }, 401)
@@ -55,7 +58,7 @@ api.post('/auth/check', async (c) => {
   try {
     body = await c.req.json()
   } catch {}
-  const password = body?.password || ''
+  const password = String(body?.password || '').trim()
   if (password === expected) {
     return c.json({ ok: true, token: password })
   }
@@ -220,14 +223,7 @@ api.put('/labels/:filename', async (c) => {
     const saved = await c.env.DB.prepare(`
       SELECT version, updated_at FROM labels WHERE filename = ?
     `).bind(filename).first<any>()
-
-    return c.json({
-      ok: true,
-      filename,
-      polygon_count: polyCount,
-      updated_at: saved?.updated_at || now,
-      version: saved?.version || null,
-    })
+    return c.json({ ok: true, saved: true, version: saved?.version ?? null, updated_at: saved?.updated_at ?? now })
   } catch (err: any) {
     return c.json({ ok: false, error: err.message }, 500)
   }
@@ -240,334 +236,196 @@ api.delete('/labels/:filename', async (c) => {
   const filename = decodeURIComponent(c.req.param('filename'))
   try {
     await c.env.DB.prepare(`DELETE FROM labels WHERE filename = ?`).bind(filename).run()
-    return c.json({ ok: true, filename })
+    return c.json({ ok: true, deleted: true })
   } catch (err: any) {
     return c.json({ ok: false, error: err.message }, 500)
   }
 })
 
 // ----------------------------------------------------------------
-// GET /api/export - 전체 라벨 일괄 내보내기 (COCO 또는 raw)
-// 쿼리: ?format=coco|raw&view=AP|LAT&labeler=park|kim|hwang&min_polygons=N
+// GET /api/export - 모든 라벨 내보내기
+// query: format=coco|raw, view=AP|LAT, labeler=park|kim|hwang, min_polygons=25
 // ----------------------------------------------------------------
 api.get('/export', async (c) => {
-  const format = c.req.query('format') || 'raw'
-  const view = c.req.query('view') || ''
-  const labeler = c.req.query('labeler') || ''
-  const minPolys = parseInt(c.req.query('min_polygons') || '0', 10)
-
   try {
-    let sql = `SELECT * FROM labels WHERE polygon_count >= ?`
-    const params: any[] = [minPolys]
-    if (view) {
-      sql += ` AND view_type = ?`
-      params.push(view)
-    }
-    if (labeler) {
-      sql += ` AND labeler_id = ?`
-      params.push(labeler)
-    }
-    sql += ` ORDER BY filename`
+    const format = c.req.query('format') || 'coco'
+    const view = c.req.query('view') || ''
+    const labeler = c.req.query('labeler') || ''
+    const minPolys = Number(c.req.query('min_polygons') || 0)
 
-    const result = await c.env.DB.prepare(sql).bind(...params).all<any>()
-    const rows = result.results || []
-
-    if (format === 'raw') {
-      // 그대로 JSON 배열로 (백업/복원용)
-      const items = rows.map((r: any) => {
-        let polygons: any[] = []
-        try {
-          polygons = JSON.parse(r.polygons_json || '[]')
-        } catch {}
-        return {
-          filename: r.filename,
-          view_type: r.view_type,
-          start_label: r.start_label,
-          image_width: r.image_width ?? null,
-          image_height: r.image_height ?? null,
-          polygons,
-          labeler_id: r.labeler_id,
-          polygon_count: r.polygon_count,
-          updated_at: r.updated_at,
-          created_at: r.created_at,
-        }
-      })
-      return c.json({
-        ok: true,
-        format: 'raw',
-        count: items.length,
-        exported_at: new Date().toISOString(),
-        filters: { view, labeler, min_polygons: minPolys },
-        items,
-      })
-    }
-
-    // COCO 통합 형식
-    // categories: C1~S1 25개 고정 (labels.js와 일치)
-    const LABEL_SEQ = [
-      'C1','C2','C3','C4','C5','C6','C7',
-      'T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12',
-      'L1','L2','L3','L4','L5','S1',
-    ]
-    const categories = LABEL_SEQ.map((name, i) => ({ id: i + 1, name, supercategory: 'vertebra' }))
-    const labelToId = new Map(LABEL_SEQ.map((l, i) => [l, i + 1]))
-
-    const images: any[] = []
-    const annotations: any[] = []
-    let nextImageId = 1
-    let nextAnnId = 1
-
-    for (const r of rows) {
-      let polygons: any[] = []
-      try {
-        polygons = JSON.parse(r.polygons_json || '[]')
-      } catch {}
-      if (polygons.length === 0) continue
-
-      const imgId = nextImageId++
-      images.push({
-        id: imgId,
-        file_name: r.filename,
-        width: r.image_width ?? null,
-        height: r.image_height ?? null,
-        view_type: r.view_type,
-        labeler_id: r.labeler_id,
-        updated_at: r.updated_at,
-      })
-
-      for (const poly of polygons) {
-        const catId = labelToId.get(poly.label) || 0
-        const pts = poly.points || []
-        if (pts.length < 6) continue
-
-        // bbox 계산
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-        for (let i = 0; i < pts.length; i += 2) {
-          if (pts[i] < minX) minX = pts[i]
-          if (pts[i] > maxX) maxX = pts[i]
-          if (pts[i + 1] < minY) minY = pts[i + 1]
-          if (pts[i + 1] > maxY) maxY = pts[i + 1]
-        }
-        // Shoelace area
-        let area = 0
-        for (let i = 0; i < pts.length; i += 2) {
-          const j = (i + 2) % pts.length
-          area += pts[i] * pts[j + 1] - pts[j] * pts[i + 1]
-        }
-        area = Math.abs(area) / 2
-
-        annotations.push({
-          id: nextAnnId++,
-          image_id: imgId,
-          category_id: catId,
-          segmentation: [pts],
-          bbox: [minX, minY, maxX - minX, maxY - minY],
-          area,
-          iscrowd: 0,
-          label: poly.label,
-        })
-      }
-    }
-
-    return c.json({
-      info: {
-        description: 'Spine Annotator COCO Export',
-        version: '1.0',
-        date_created: new Date().toISOString(),
-        filters: { view, labeler, min_polygons: minPolys },
-      },
-      categories,
-      images,
-      annotations,
-    })
-  } catch (err: any) {
-    return c.json({ ok: false, error: err.message }, 500)
-  }
-})
-
-// ----------------------------------------------------------------
-// Presence (실시간 작업 중 표시)
-// - POST /api/presence  body: { labeler_id, filename }
-//   호출할 때마다 last_seen 갱신. 클라이언트는 5초마다 보냄.
-//   filename === '' 이면 해당 라벨러의 모든 presence 제거 (창 닫기 / 다른 라벨러로 전환)
-// - GET  /api/presence  → { active: [{ labeler_id, filename, last_seen, seconds_ago }] }
-//   stale cutoff: 30초 이상 안 본 row 는 제외
-// ----------------------------------------------------------------
-const PRESENCE_TTL_SECONDS = 30  // 30초 동안 heartbeat 없으면 offline
-
-api.post('/presence', async (c) => {
-  let body: any
-  try {
-    body = await c.req.json()
-  } catch {
-    return c.json({ ok: false, error: 'invalid json' }, 400)
-  }
-  const labelerId = (body?.labeler_id || '').toString().trim()
-  const filename = (body?.filename || '').toString().trim()
-
-  if (!labelerId) {
-    return c.json({ ok: false, error: 'labeler_id required' }, 400)
-  }
-
-  const now = new Date().toISOString()
-  try {
-    if (!filename) {
-      // 라벨러가 작업 중단 / 창 닫음 → 해당 라벨러의 모든 presence 제거
-      await c.env.DB.prepare(`DELETE FROM presence WHERE labeler_id = ?`).bind(labelerId).run()
-      return c.json({ ok: true, cleared: true })
-    }
-
-    // upsert: 한 라벨러는 한 번에 하나의 파일만 작업 중인 것으로 본다
-    // → 같은 labeler_id 의 다른 filename 행은 정리
-    await c.env.DB.prepare(`DELETE FROM presence WHERE labeler_id = ? AND filename != ?`)
-      .bind(labelerId, filename).run()
-
-    await c.env.DB.prepare(`
-      INSERT INTO presence (labeler_id, filename, last_seen)
-      VALUES (?, ?, ?)
-      ON CONFLICT(labeler_id, filename) DO UPDATE SET last_seen = excluded.last_seen
-    `).bind(labelerId, filename, now).run()
-
-    return c.json({ ok: true, labeler_id: labelerId, filename, last_seen: now })
-  } catch (err: any) {
-    return c.json({ ok: false, error: err.message }, 500)
-  }
-})
-
-// ----------------------------------------------------------------
-// PRESENCE: 현재 누가 어느 파일을 작업 중인지
-// - POST/PUT /api/presence: heartbeat
-// - DELETE /api/presence: 작업 종료
-// - GET /api/presence: 활성 작업자 목록
-// ----------------------------------------------------------------
-// PUT /api/presence - heartbeat (현재 보고 있는 파일 기록)
-// body: { labeler_id, filename }
-api.put('/presence', async (c) => {
-  let body: any = {}
-  try { body = await c.req.json() } catch {}
-  const labelerId = body.labeler_id || ''
-  const filename = body.filename || ''
-  if (!labelerId) {
-    return c.json({ ok: false, error: 'labeler_id required' }, 400)
-  }
-  const now = new Date().toISOString()
-
-  try {
-    if (filename) {
-      // 이 라벨러의 다른 파일 presence는 제거 (한 명은 한 파일만 작업)
-      await c.env.DB.prepare(`
-        DELETE FROM presence WHERE labeler_id = ? AND filename != ?
-      `).bind(labelerId, filename).run()
-
-      await c.env.DB.prepare(`
-        INSERT INTO presence (labeler_id, filename, last_seen)
-        VALUES (?, ?, ?)
-        ON CONFLICT(labeler_id, filename) DO UPDATE SET last_seen = excluded.last_seen
-      `).bind(labelerId, filename, now).run()
-    } else {
-      // 파일 없이 heartbeat = 모든 presence 정리 (아이들 상태)
-      await c.env.DB.prepare(`
-        DELETE FROM presence WHERE labeler_id = ?
-      `).bind(labelerId).run()
-    }
-    return c.json({ ok: true })
-  } catch (err: any) {
-    return c.json({ ok: false, error: err.message }, 500)
-  }
-})
-
-// DELETE /api/presence - 작업 종료 (탭 닫기 등)
-// body: { labeler_id }
-api.delete('/presence', async (c) => {
-  let body: any = {}
-  try { body = await c.req.json() } catch {}
-  const labelerId = body.labeler_id || ''
-  if (!labelerId) {
-    return c.json({ ok: false, error: 'labeler_id required' }, 400)
-  }
-  try {
-    await c.env.DB.prepare(`DELETE FROM presence WHERE labeler_id = ?`).bind(labelerId).run()
-    return c.json({ ok: true })
-  } catch (err: any) {
-    return c.json({ ok: false, error: err.message }, 500)
-  }
-})
-
-// GET /api/presence - 활성 작업자 목록
-// 응답: { active: [{ labeler_id, filename, last_seen }] }
-api.get('/presence', async (c) => {
-  try {
-    // TTL 초과 항목 정리 (옵션 — 어차피 쿼리에서 필터)
-    const cutoff = new Date(Date.now() - PRESENCE_TTL_SECONDS * 1000).toISOString()
-    await c.env.DB.prepare(`DELETE FROM presence WHERE last_seen < ?`).bind(cutoff).run()
+    const clauses: string[] = []
+    const params: any[] = []
+    if (view) { clauses.push('view_type = ?'); params.push(view) }
+    if (labeler) { clauses.push('labeler_id = ?'); params.push(labeler) }
+    if (minPolys > 0) { clauses.push('polygon_count >= ?'); params.push(minPolys) }
+    const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : ''
 
     const result = await c.env.DB.prepare(`
-      SELECT labeler_id, filename, last_seen FROM presence
-      WHERE last_seen >= ?
-      ORDER BY last_seen DESC
-    `).bind(cutoff).all<any>()
+      SELECT * FROM labels ${where} ORDER BY filename
+    `).bind(...params).all<any>()
 
-    return c.json({ ok: true, active: result.results || [] })
-  } catch (err: any) {
-    return c.json({ ok: false, error: err.message }, 500)
-  }
-})
-
-// ----------------------------------------------------------------
-// GET /api/sync - 통합 폴링 엔드포인트
-// 한 번에 라벨 목록 + presence 받기 (요청 절약)
-// 옵션: ?since=<ISO> 로 변경분만 받기
-// ----------------------------------------------------------------
-api.get('/sync', async (c) => {
-  const since = c.req.query('since') || ''
-
-  try {
-    // 라벨 목록 (since 이후 변경분만 또는 전체)
-    let labelsSql = `SELECT filename, view_type, labeler_id, polygon_count, updated_at, version, image_width, image_height FROM labels`
-    const labelsParams: any[] = []
-    if (since) {
-      labelsSql += ` WHERE updated_at > ?`
-      labelsParams.push(since)
+    const rows = result.results || []
+    if (format === 'raw') {
+      return c.json({ ok: true, items: rows })
     }
-    labelsSql += ` ORDER BY updated_at DESC`
-    const labelsRes = await c.env.DB.prepare(labelsSql).bind(...labelsParams).all<any>()
 
-    // 활성 presence
-    const cutoff = new Date(Date.now() - PRESENCE_TTL_SECONDS * 1000).toISOString()
-    const presenceRes = await c.env.DB.prepare(`
-      SELECT labeler_id, filename, last_seen FROM presence WHERE last_seen >= ?
-    `).bind(cutoff).all<any>()
+    // COCO 형식 변환
+    const images: any[] = []
+    const annotations: any[] = []
+    const categories = generateCocoCategories()
+    let annId = 1
+    let imgId = 1
 
-    return c.json({
-      ok: true,
-      server_time: new Date().toISOString(),
-      labels: labelsRes.results || [],
-      presence: presenceRes.results || [],
-      incremental: !!since,
-    })
+    for (const row of rows) {
+      const polygons = JSON.parse(row.polygons_json || '[]')
+      const width = row.image_width || 0
+      const height = row.image_height || 0
+      images.push({ id: imgId, file_name: row.filename, width, height })
+      for (const poly of polygons) {
+        const label = poly.label || ''
+        const cat = categories.find(c => c.name === label)
+        if (!cat) continue
+        const pts = poly.points || []
+        annotations.push({
+          id: annId++, image_id: imgId, category_id: cat.id,
+          segmentation: [pts], bbox: polygonBbox(pts), area: polygonArea(pts),
+          iscrowd: 0,
+        })
+      }
+      imgId++
+    }
+
+    return c.json({ ok: true, images, annotations, categories })
   } catch (err: any) {
     return c.json({ ok: false, error: err.message }, 500)
   }
 })
 
+function generateCocoCategories() {
+  const cats: any[] = []
+  let id = 1
+  for (const prefix of ['C', 'T', 'L']) {
+    const max = prefix === 'C' ? 7 : prefix === 'T' ? 12 : 5
+    for (let i = 1; i <= max; i++) cats.push({ id: id++, name: `${prefix}${i}`, supercategory: 'vertebra' })
+  }
+  cats.push({ id: id++, name: 'S1', supercategory: 'vertebra' })
+  return cats
+}
+
+function polygonBbox(pts: number[]) {
+  const xs = pts.filter((_, i) => i % 2 === 0)
+  const ys = pts.filter((_, i) => i % 2 === 1)
+  if (!xs.length) return [0, 0, 0, 0]
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minY = Math.min(...ys), maxY = Math.max(...ys)
+  return [minX, minY, maxX - minX, maxY - minY]
+}
+
+function polygonArea(pts: number[]) {
+  let area = 0
+  for (let i = 0; i < pts.length; i += 2) {
+    const j = (i + 2) % pts.length
+    area += pts[i] * pts[j + 1] - pts[j] * pts[i + 1]
+  }
+  return Math.abs(area / 2)
+}
+
 // ----------------------------------------------------------------
-// GET /api/stats - 통계 (라벨러별, 뷰별 카운트)
+// GET /api/stats - 통계 요약
 // ----------------------------------------------------------------
 api.get('/stats', async (c) => {
   try {
     const total = await c.env.DB.prepare(`SELECT COUNT(*) as cnt FROM labels`).first<any>()
-    const byLabeler = await c.env.DB.prepare(`
-      SELECT labeler_id, COUNT(*) as cnt FROM labels GROUP BY labeler_id
-    `).all<any>()
-    const byView = await c.env.DB.prepare(`
-      SELECT view_type, COUNT(*) as cnt FROM labels GROUP BY view_type
-    `).all<any>()
-    return c.json({
-      ok: true,
-      total: total?.cnt || 0,
-      by_labeler: byLabeler.results || [],
-      by_view: byView.results || [],
-    })
+    const byLabeler = await c.env.DB.prepare(`SELECT labeler_id, COUNT(*) as cnt FROM labels GROUP BY labeler_id`).all()
+    const byView = await c.env.DB.prepare(`SELECT view_type, COUNT(*) as cnt FROM labels GROUP BY view_type`).all()
+    return c.json({ ok: true, total: total?.cnt || 0, by_labeler: byLabeler.results || [], by_view: byView.results || [] })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+// ----------------------------------------------------------------
+// POST /api/migrate - localStorage 백업 업로드
+// ----------------------------------------------------------------
+api.post('/migrate', async (c) => {
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid json' }, 400) }
+  const items = Array.isArray(body.items) ? body.items : []
+  const results: any[] = []
+  for (const it of items) {
+    try {
+      const filename = it.filename
+      const data = it.data || {}
+      const polygons = Array.isArray(data.polygons) ? data.polygons : []
+      if (!filename || polygons.length === 0) { results.push({ filename, ok: false, reason: 'empty' }); continue }
+      const polygonsJson = JSON.stringify(polygons)
+      const now = new Date().toISOString()
+      const viewType = data.view_type || data.viewType || null
+      const startLabel = data.start_label || data.startLabel || null
+      const labelerId = data.labeler_id || data.labelerId || null
+      await c.env.DB.prepare(`
+        INSERT INTO labels (filename, view_type, start_label, polygons_json, labeler_id, polygon_count, updated_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(filename) DO UPDATE SET
+          view_type=excluded.view_type,
+          start_label=excluded.start_label,
+          polygons_json=excluded.polygons_json,
+          labeler_id=excluded.labeler_id,
+          polygon_count=excluded.polygon_count,
+          updated_at=excluded.updated_at
+      `).bind(filename, viewType, startLabel, polygonsJson, labelerId, polygons.length, now, now).run()
+      results.push({ filename, ok: true })
+    } catch (e: any) {
+      results.push({ filename: it.filename, ok: false, error: e.message })
+    }
+  }
+  return c.json({ ok: true, results })
+})
+
+// ----------------------------------------------------------------
+// POST /api/presence - 현재 작업 중인 파일 알림
+// ----------------------------------------------------------------
+api.post('/presence', async (c) => {
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid json' }, 400) }
+  const labelerId = body.labeler_id || ''
+  const filename = body.filename || ''
+  if (!labelerId) return c.json({ ok: false, error: 'labeler_id required' }, 400)
+  const now = new Date().toISOString()
+  try {
+    await c.env.DB.prepare(`
+      INSERT INTO presence (labeler_id, filename, last_seen)
+      VALUES (?, ?, ?)
+      ON CONFLICT(labeler_id) DO UPDATE SET filename=excluded.filename, last_seen=excluded.last_seen
+    `).bind(labelerId, filename, now).run()
+    return c.json({ ok: true })
+  } catch (err: any) { return c.json({ ok: false, error: err.message }, 500) }
+})
+
+api.delete('/presence/:labeler_id', async (c) => {
+  const labelerId = decodeURIComponent(c.req.param('labeler_id'))
+  try {
+    await c.env.DB.prepare(`DELETE FROM presence WHERE labeler_id = ?`).bind(labelerId).run()
+    return c.json({ ok: true })
+  } catch (err: any) { return c.json({ ok: false, error: err.message }, 500) }
+})
+
+// ----------------------------------------------------------------
+// GET /api/sync - 라벨 메타 + presence 한번에 동기화
+// ----------------------------------------------------------------
+api.get('/sync', async (c) => {
+  try {
+    const labels = await c.env.DB.prepare(`
+      SELECT filename, view_type, labeler_id, polygon_count, updated_at, version, image_width, image_height
+      FROM labels
+      ORDER BY updated_at DESC
+    `).all()
+    const presence = await c.env.DB.prepare(`
+      SELECT labeler_id, filename, last_seen
+      FROM presence
+      WHERE datetime(last_seen) >= datetime('now', '-30 seconds')
+    `).all()
+    return c.json({ ok: true, server_time: new Date().toISOString(), labels: labels.results || [], presence: presence.results || [] })
   } catch (err: any) {
     return c.json({ ok: false, error: err.message }, 500)
   }
