@@ -3,18 +3,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/apply-freehand-move-patch.mjs && node scripts/apply-ai-overlay-patch.mjs && node scripts/apply-ai-overlay-scan-fix.mjs && node scripts/apply-ai-compare-panel-patch.mjs && node scripts/apply-ai-compare-style-patch.mjs && node scripts/apply-ai-compare-flicker-fix.mjs && vite build",
+    "build": "node scripts/apply-freehand-move-patch.mjs && node scripts/apply-ai-overlay-patch.mjs && node scripts/apply-ai-overlay-scan-fix.mjs && node scripts/apply-ai-compare-panel-patch.mjs && node scripts/apply-ai-compare-style-patch.mjs && node scripts/apply-ai-compare-flicker-fix.mjs && node scripts/apply-ai-mask-display-threshold-fix.mjs && vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
   },
-  "dependencies": {
-    "hono": "^4.12.25"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260609.1",
-    "@hono/vite-build": "^1.2.0",
-    "@hono/vite-dev-server": "^0.18.2",
-    "vite": "^6.3.5",
-    "wrangler": "^4.4.0"
-  }
+  "dependencies": {"hono": "^4.12.25"},
+  "devDependencies": {"@cloudflare/workers-types": "^4.20260609.1", "@hono/vite-build": "^1.2.0", "@hono/vite-dev-server": "^0.18.2", "vite": "^6.3.5", "wrangler": "^4.4.0"}
 }
