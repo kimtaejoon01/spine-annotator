@@ -3,12 +3,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/apply-freehand-move-patch.mjs && node scripts/apply-ai-overlay-patch.mjs && node scripts/apply-ai-overlay-scan-fix.mjs && node scripts/apply-ai-compare-panel-patch.mjs && node scripts/apply-ai-compare-style-patch.mjs && vite build",
+    "build": "node scripts/apply-freehand-move-patch.mjs && node scripts/apply-ai-overlay-patch.mjs && node scripts/apply-ai-overlay-scan-fix.mjs && node scripts/apply-ai-compare-panel-patch.mjs && node scripts/apply-ai-compare-style-patch.mjs && node scripts/apply-ai-compare-flicker-fix.mjs && vite build",
     "preview": "wrangler pages dev",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "db:migrate:local": "wrangler d1 migrations apply spine-annotator-production --local",
-    "db:migrate:remote": "wrangler d1 migrations apply spine-annotator-production --remote"
+    "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
   },
   "dependencies": {
     "hono": "^4.12.25"
