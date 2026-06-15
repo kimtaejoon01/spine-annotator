@@ -1,13 +1,437 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs'
-import zlib from 'node:zlib'
 
-const payload = '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'
-const tempFile = new URL('./.apply-ai-overlay-patch.tmp.mjs', import.meta.url)
-fs.writeFileSync(tempFile, zlib.gunzipSync(Buffer.from(payload, 'base64')).toString('utf8'))
-try {
-  await import(tempFile.href + '?t=' + Date.now())
-} finally {
-  try { fs.unlinkSync(tempFile) } catch {}
+function read(file) { return fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n') }
+function write(file, text) { fs.writeFileSync(file, text) }
+function fail(label) { throw new Error('Patch failed: ' + label) }
+function replaceOnce(s, pattern, repl, label, already) {
+  if (already && already.test(s)) { console.log('OK ' + label + ' already patched'); return s }
+  const n = s.replace(pattern, repl)
+  if (n === s) fail(label)
+  console.log('PATCH ' + label)
+  return n
 }
+function insertBefore(s, needle, ins, label, already) {
+  if (already && already.test(s)) { console.log('OK ' + label + ' already patched'); return s }
+  if (!s.includes(needle)) fail(label)
+  console.log('PATCH ' + label)
+  return s.replace(needle, ins + needle)
+}
+function insertAfter(s, needle, ins, label, already) {
+  if (already && already.test(s)) { console.log('OK ' + label + ' already patched'); return s }
+  if (!s.includes(needle)) fail(label)
+  console.log('PATCH ' + label)
+  return s.replace(needle, needle + ins)
+}
+
+// annotator.js
+{
+  const file = 'public/static/annotator.js'
+  let s = read(file)
+  s = replaceOnce(s,
+    /    this\.imageNode = null\n    this\.imageFilters = \{ brightness: 0, contrast: 0, invert: false \}\n/,
+    "    this.imageNode = null\n    this.imageFilters = { brightness: 0, contrast: 0, invert: false }\n\n    // 오버레이 표시 상태\n    this.aiMaskNodes = []\n    this.aiMaskOpacity = 0.45\n    this.labelOverlayVisible = true\n    this.aiMaskOverlayVisible = true\n",
+    'annotator overlay state', /this\.aiMaskNodes = \[\]/)
+  s = replaceOnce(s,
+    /    this\.imageLayer = new Konva\.Layer\(\)\n    this\.polyLayer = new Konva\.Layer\(\)\n    this\.previewLayer = new Konva\.Layer\(\)\n\n    this\.stage\.add\(this\.imageLayer\)\n    this\.stage\.add\(this\.polyLayer\)\n    this\.stage\.add\(this\.previewLayer\)\n/,
+    "    this.imageLayer = new Konva.Layer()\n    this.aiMaskLayer = new Konva.Layer()\n    this.polyLayer = new Konva.Layer()\n    this.previewLayer = new Konva.Layer()\n\n    this.stage.add(this.imageLayer)\n    this.stage.add(this.aiMaskLayer)\n    this.stage.add(this.polyLayer)\n    this.stage.add(this.previewLayer)\n",
+    'annotator ai mask layer', /this\.aiMaskLayer = new Konva\.Layer\(\)/)
+  s = replaceOnce(s,
+    /        \/\/ 기존 이미지 제거\n        this\.imageLayer\.destroyChildren\(\)\n/,
+    "        // 기존 이미지/AI 오버레이 제거\n        this.imageLayer.destroyChildren()\n        this.clearAiMasks()\n",
+    'annotator clear ai masks on image load', /this\.clearAiMasks\(\)/)
+
+  const methods = `
+
+  // ============================================================
+  // 오버레이 표시 / AI mask
+  // ============================================================
+  setLabelOverlayVisible(visible) {
+    this.labelOverlayVisible = !!visible
+    if (this.polyLayer) this.polyLayer.visible(this.labelOverlayVisible)
+    if (this.previewLayer) this.previewLayer.visible(this.labelOverlayVisible)
+    this.stage.batchDraw()
+  }
+
+  setAiMaskVisible(visible) {
+    this.aiMaskOverlayVisible = !!visible
+    if (this.aiMaskLayer) this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
+    this.stage.batchDraw()
+  }
+
+  setAiMaskOpacity(percent) {
+    const value = Math.max(0, Math.min(100, Number(percent))) / 100
+    this.aiMaskOpacity = value
+    if (this.aiMaskLayer) this.aiMaskLayer.opacity(value)
+    this.stage.batchDraw()
+  }
+
+  clearAiMasks() {
+    this.aiMaskNodes = []
+    if (this.aiMaskLayer) {
+      this.aiMaskLayer.destroyChildren()
+      this.aiMaskLayer.draw()
+    }
+  }
+
+  async loadAiMasks(items = []) {
+    this.clearAiMasks()
+    if (!items.length || !this.imageWidth || !this.imageHeight) return
+    const nodes = []
+    for (const item of items) {
+      try {
+        const img = await this.loadMaskImage(item.url)
+        const colored = this.colorizeMaskImage(img, item.color || '#58a6ff')
+        const node = new Konva.Image({ image: colored, x: 0, y: 0, width: this.imageWidth, height: this.imageHeight, listening: false, opacity: 1 })
+        node.setAttr('aiRegion', item.region || '')
+        node.setAttr('aiModel', item.modelKey || item.model || '')
+        this.aiMaskLayer.add(node)
+        nodes.push(node)
+      } catch (err) {
+        console.warn('[AI mask] load failed:', item, err)
+      }
+    }
+    this.aiMaskNodes = nodes
+    this.aiMaskLayer.opacity(this.aiMaskOpacity)
+    this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
+    this.aiMaskLayer.draw()
+  }
+
+  loadMaskImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = src
+    })
+  }
+
+  colorizeMaskImage(img, color) {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    ctx.drawImage(img, 0, 0)
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const rgb = this.hexToRgb(color)
+    for (let i = 0; i < data.data.length; i += 4) {
+      const r = data.data[i], g = data.data[i + 1], b = data.data[i + 2], a = data.data[i + 3]
+      const brightness = Math.max(r, g, b)
+      if (a > 0 && brightness > 20) {
+        data.data[i] = rgb.r
+        data.data[i + 1] = rgb.g
+        data.data[i + 2] = rgb.b
+        data.data[i + 3] = Math.min(230, Math.max(90, brightness))
+      } else {
+        data.data[i + 3] = 0
+      }
+    }
+    ctx.putImageData(data, 0, 0)
+    return canvas
+  }
+
+  hexToRgb(hex) {
+    const m = String(hex).replace('#', '').match(/^([0-9a-f]{6})$/i)
+    if (!m) return { r: 88, g: 166, b: 255 }
+    const n = parseInt(m[1], 16)
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+  }
+`
+  s = insertAfter(s, "  setImageFilter(opts) {\n    this.imageFilters = { ...this.imageFilters, ...opts }\n    this.applyImageFilters()\n  }", methods, 'annotator overlay methods', /async loadAiMasks\(items = \[\]\)/)
+  write(file, s)
+}
+
+// app.js
+{
+  const file = 'public/static/app.js'
+  let s = read(file)
+  s = replaceOnce(s,
+    /  fileSearch: '',\s*\/\/ 검색어 \(lowercase\)\n  currentObjectUrl: null,\s*\/\/ 현재 캔버스에 로드된 ObjectURL \(해제용\)\n\}/,
+    "  fileSearch: '',            // 검색어 (lowercase)\n  currentObjectUrl: null,    // 현재 캔버스에 로드된 ObjectURL (해제용)\n\n  // AI mask 오버레이\n  aiFolderHandle: null,\n  aiFolderName: '',\n  aiFiles: [],\n  aiByBase: new Map(),\n  aiSelectedModel: { cervical: '', thoracic: '', lumbar: '' },\n  aiRegionVisible: { cervical: true, thoracic: true, lumbar: true },\n  aiMaskVisible: true,\n  aiOpacity: 45,\n  aiObjectUrls: [],\n  aiLoadToken: 0,\n  labelOverlayVisible: true,\n  originalOnly: false,\n}",
+    'app ai state', /aiFolderHandle: null/)
+  s = insertAfter(s, "  // 폴더 연결\n  document.getElementById('connectFolderBtn').addEventListener('click', handleConnectFolder)", "\n\n  // 보기 / AI mask 오버레이\n  bindOverlayControls()", 'app bind overlay controls', /bindOverlayControls\(\)/)
+  s = insertAfter(s, "    const normalized = normalizeKey(e)\n    if (!normalized) return", "\n\n    if (normalized === 'h') {\n      state.annotator.setLabelOverlayVisible(false)\n      e.preventDefault()\n      return\n    }", 'app H hold hide keydown', /setLabelOverlayVisible\(false\)/)
+  s = insertAfter(s, "    const normalized = normalizeKey(e)\n    if (!normalized) return\n\n    // holdable 액션의 해제", "\n    if (normalized === 'h') {\n      state.annotator.setLabelOverlayVisible(state.labelOverlayVisible && !state.originalOnly)\n      e.preventDefault()\n      return\n    }\n", 'app H hold hide keyup', /state\.labelOverlayVisible && !state\.originalOnly/)
+  s = insertAfter(s, "  state.annotator.loadImage(url).then(() => {\n    updateFileInfo()\n    document.getElementById('canvasPlaceholder').classList.add('hidden')", "\n    applyAiOverlayForCurrentFile().catch(() => {})", 'app single file ai overlay', /applyAiOverlayForCurrentFile\(\)\.catch\(\(\) => \{\}\)/)
+  s = insertAfter(s, "    // 저장된 라벨 불러오기 (서버에서)\n    await loadLabelsFromStorage(fileEntry.name)", "\n\n    // 현재 이미지에 맞는 AI mask가 있으면 겹쳐 표시\n    await applyAiOverlayForCurrentFile()", 'app folder file ai overlay', /현재 이미지에 맞는 AI mask/)
+  s = replaceOnce(s, /    const files = await listImageFiles\(state\.folderHandle\)\n    state\.files = files\n/, "    const allFiles = await listImageFiles(state.folderHandle)\n    const files = allFiles.filter(f => !parseAiMaskFile(f.name, f.name))\n    state.files = files\n", 'app filter ai masks from image list', /const allFiles = await listImageFiles\(state\.folderHandle\)/)
+  s = insertAfter(s, "  state.imageWidth = state.annotator.imageWidth\n  state.imageHeight = state.annotator.imageHeight", "\n  renderAiRegionControls()", 'app rerender ai controls on file change', /renderAiRegionControls\(\)\n\}/)
+
+  const overlayFunctions = `// ================================================================
+// 보기 / AI mask 오버레이
+// ================================================================
+const AI_REGIONS = [
+  { id: 'cervical', label: 'Cervical', color: '#bc8cff' },
+  { id: 'thoracic', label: 'Thoracic', color: '#58a6ff' },
+  { id: 'lumbar', label: 'Lumbar', color: '#3fb950' },
+]
+
+function bindOverlayControls() {
+  const labelToggle = document.getElementById('toggleLabelOverlay')
+  if (labelToggle) {
+    labelToggle.checked = state.labelOverlayVisible
+    labelToggle.addEventListener('change', (e) => {
+      state.labelOverlayVisible = e.target.checked
+      state.originalOnly = false
+      updateOriginalOnlyButton()
+      state.annotator.setLabelOverlayVisible(state.labelOverlayVisible)
+    })
+  }
+  const aiToggle = document.getElementById('toggleAiOverlay')
+  if (aiToggle) {
+    aiToggle.checked = state.aiMaskVisible
+    aiToggle.addEventListener('change', (e) => {
+      state.aiMaskVisible = e.target.checked
+      state.originalOnly = false
+      updateOriginalOnlyButton()
+      state.annotator.setAiMaskVisible(state.aiMaskVisible)
+      applyAiOverlayForCurrentFile().catch(() => {})
+    })
+  }
+  const opacity = document.getElementById('aiOpacity')
+  if (opacity) {
+    opacity.value = String(state.aiOpacity)
+    const value = document.getElementById('aiOpacityValue')
+    if (value) value.textContent = String(state.aiOpacity)
+    opacity.addEventListener('input', (e) => {
+      state.aiOpacity = Number(e.target.value)
+      if (value) value.textContent = String(state.aiOpacity)
+      state.annotator.setAiMaskOpacity(state.aiOpacity)
+    })
+  }
+  const originalOnlyBtn = document.getElementById('originalOnlyBtn')
+  if (originalOnlyBtn) originalOnlyBtn.addEventListener('click', toggleOriginalOnly)
+  const connectAiBtn = document.getElementById('connectAiFolderBtn')
+  if (connectAiBtn) connectAiBtn.addEventListener('click', handleConnectAiFolder)
+  const refreshAiBtn = document.getElementById('refreshAiFolderBtn')
+  if (refreshAiBtn) refreshAiBtn.addEventListener('click', () => scanAiFolder().catch(err => alert('AI 폴더 새로고침 실패: ' + err.message)))
+  renderAiRegionControls()
+  updateAiFolderStatus()
+}
+
+function toggleOriginalOnly() {
+  state.originalOnly = !state.originalOnly
+  updateOriginalOnlyButton()
+  state.annotator.setLabelOverlayVisible(state.originalOnly ? false : state.labelOverlayVisible)
+  state.annotator.setAiMaskVisible(state.originalOnly ? false : state.aiMaskVisible)
+}
+function updateOriginalOnlyButton() {
+  const btn = document.getElementById('originalOnlyBtn')
+  if (!btn) return
+  btn.classList.toggle('active', state.originalOnly)
+  btn.innerHTML = state.originalOnly ? '<i class="fas fa-eye"></i> 원본만 보는 중' : '<i class="fas fa-eye-slash"></i> 원본만 보기'
+}
+async function handleConnectAiFolder() {
+  if (!window.showDirectoryPicker) { alert('이 브라우저는 AI 폴더 연결을 지원하지 않습니다. Chrome 또는 Edge를 사용해주세요.'); return }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'spine-annotator-ai-results', mode: 'read', startIn: 'pictures' })
+    state.aiFolderHandle = handle
+    state.aiFolderName = handle.name
+    await scanAiFolder()
+  } catch (err) {
+    if (err.name === 'AbortError') return
+    alert('AI 폴더 연결 실패: ' + err.message)
+  }
+}
+async function scanAiFolder() {
+  if (!state.aiFolderHandle) { updateAiFolderStatus('AI 폴더가 연결되지 않았습니다', 'empty'); return }
+  const files = await listAiMaskFilesRecursive(state.aiFolderHandle)
+  state.aiFiles = files
+  state.aiByBase = new Map()
+  for (const item of files) {
+    const arr = state.aiByBase.get(item.base) || []
+    arr.push(item)
+    state.aiByBase.set(item.base, arr)
+  }
+  updateAiFolderStatus(files.length + '개 AI mask 연결됨', 'connected')
+  renderAiRegionControls()
+  await applyAiOverlayForCurrentFile()
+}
+async function listAiMaskFilesRecursive(dirHandle, prefix = '') {
+  const out = []
+  for await (const [name, entry] of dirHandle.entries()) {
+    const relPath = prefix ? prefix + '/' + name : name
+    if (entry.kind === 'directory') { out.push(...await listAiMaskFilesRecursive(entry, relPath)); continue }
+    const ext = name.split('.').pop()?.toLowerCase()
+    if (!['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(ext)) continue
+    const parsed = parseAiMaskFile(name, relPath)
+    if (parsed) out.push({ ...parsed, name, path: relPath, handle: entry })
+  }
+  out.sort((a, b) => (a.base + '_' + a.region + '_' + a.modelKey).localeCompare(b.base + '_' + b.region + '_' + b.modelKey, undefined, { numeric: true }))
+  return out
+}
+function parseAiMaskFile(name, relPath = name) {
+  const noExt = name.replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '')
+  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>v\d+)$/i)
+  if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, m.groups.version)
+  m = noExt.match(/^(?<base>.+)_(?<region>cervical|lumbar)_(?<model>.+)_binary_full$/i)
+  if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, 'v0')
+  const parts = relPath.split('/')
+  if (/_mask$/i.test(noExt) && parts.length >= 3) return normalizeAiMeta(parts[parts.length - 3], 'thoracic', parts[parts.length - 2], 'v0')
+  m = noExt.match(/^(?<base>.+?)_(?<model>Weighted_Ensemble|Majority_Vote|U_Net|Coordconv_UNet|Center_plus_Coordconv)_mask$/i)
+  if (m) return normalizeAiMeta(m.groups.base, 'thoracic', m.groups.model, 'v0')
+  return null
+}
+function normalizeAiMeta(base, region, model, version) {
+  const normalizedModel = slugAiName(model)
+  const normalizedVersion = String(version || 'v0').toLowerCase()
+  return { base, region: String(region).toLowerCase(), model: normalizedModel, version: normalizedVersion, modelKey: normalizedModel + '_' + normalizedVersion }
+}
+function slugAiName(name) {
+  return String(name).normalize('NFKC').replace(/^[A-Z]_/, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').toLowerCase()
+}
+function imageBaseName(filename) { return String(filename || '').replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '') }
+function getAiCandidatesForCurrentFile() { return state.aiByBase.get(imageBaseName(state.filename)) || [] }
+function renderAiRegionControls() {
+  const container = document.getElementById('aiRegionControls')
+  if (!container) return
+  const candidates = getAiCandidatesForCurrentFile()
+  container.innerHTML = ''
+  if (!state.aiFolderHandle) { container.innerHTML = '<div class="ai-empty">AI mask 폴더를 연결하면 부위별 모델을 선택할 수 있습니다.</div>'; return }
+  for (const region of AI_REGIONS) {
+    const items = candidates.filter(x => x.region === region.id)
+    const modelKeys = [...new Set(items.map(x => x.modelKey))]
+    if (!state.aiSelectedModel[region.id] && modelKeys.length > 0) state.aiSelectedModel[region.id] = preferDefaultModel(modelKeys)
+    if (state.aiSelectedModel[region.id] && !modelKeys.includes(state.aiSelectedModel[region.id]) && modelKeys.length > 0) state.aiSelectedModel[region.id] = preferDefaultModel(modelKeys)
+    const row = document.createElement('div')
+    row.className = 'ai-region-row'
+    const options = items.length === 0 ? '<option>결과 없음</option>' : modelKeys.map(k => '<option value="' + escapeHtml(k) + '" ' + (k === state.aiSelectedModel[region.id] ? 'selected' : '') + '>' + escapeHtml(k) + '</option>').join('')
+    row.innerHTML = '<label class="checkbox-label ai-region-check"><input type="checkbox" ' + (state.aiRegionVisible[region.id] ? 'checked' : '') + ' ' + (items.length === 0 ? 'disabled' : '') + ' /><span class="ai-color-dot" style="background:' + region.color + '"></span><span>' + region.label + '</span></label><select class="select-input ai-model-select" ' + (items.length === 0 ? 'disabled' : '') + '>' + options + '</select>'
+    row.querySelector('input[type="checkbox"]').addEventListener('change', (e) => { state.aiRegionVisible[region.id] = e.target.checked; applyAiOverlayForCurrentFile().catch(() => {}) })
+    row.querySelector('select').addEventListener('change', (e) => { state.aiSelectedModel[region.id] = e.target.value; applyAiOverlayForCurrentFile().catch(() => {}) })
+    container.appendChild(row)
+  }
+}
+function preferDefaultModel(modelKeys) { return modelKeys.find(k => k.includes('weighted_ensemble')) || modelKeys[0] || '' }
+async function applyAiOverlayForCurrentFile() {
+  const token = ++state.aiLoadToken
+  revokeAiObjectUrls()
+  if (!state.annotator || !state.aiMaskVisible || state.originalOnly) { state.annotator?.clearAiMasks(); return }
+  renderAiRegionControls()
+  const candidates = getAiCandidatesForCurrentFile()
+  const selected = []
+  for (const region of AI_REGIONS) {
+    if (!state.aiRegionVisible[region.id]) continue
+    const item = candidates.find(x => x.region === region.id && x.modelKey === state.aiSelectedModel[region.id])
+    if (item) selected.push({ ...item, color: region.color })
+  }
+  const maskItems = []
+  for (const item of selected) {
+    const obj = await fileHandleToUrl(item.handle)
+    state.aiObjectUrls.push(obj.url)
+    maskItems.push({ ...item, url: obj.url })
+  }
+  if (token !== state.aiLoadToken) { revokeAiObjectUrls(); return }
+  state.annotator.setAiMaskOpacity(state.aiOpacity)
+  state.annotator.setAiMaskVisible(state.aiMaskVisible && !state.originalOnly)
+  await state.annotator.loadAiMasks(maskItems)
+}
+function revokeAiObjectUrls() { for (const url of state.aiObjectUrls) URL.revokeObjectURL(url); state.aiObjectUrls = [] }
+function updateAiFolderStatus(message, type = null) {
+  const el = document.getElementById('aiFolderStatus')
+  if (!el) return
+  if (!message) {
+    if (state.aiFolderHandle) { message = (state.aiFolderName || 'AI 폴더') + ' · ' + state.aiFiles.length + '개 mask'; type = 'connected' }
+    else { message = 'AI mask 폴더가 연결되지 않았습니다'; type = 'empty' }
+  }
+  el.className = 'ai-folder-status ' + (type || 'empty')
+  el.textContent = message
+}
+
+`
+  s = insertBefore(s, "// ================================================================\n// 키보드 단축키\n// ================================================================", overlayFunctions, 'app overlay functions', /const AI_REGIONS = \[/)
+  write(file, s)
+}
+
+// src/index.tsx
+{
+  const file = 'src/index.tsx'
+  let s = read(file)
+  const aiPanel = `          <div class="panel">
+            <h3 class="panel-title">
+              <i class="fas fa-layer-group"></i> 보기 / AI 결과
+            </h3>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="toggleLabelOverlay" checked />
+                <span>사람 라벨 보기</span>
+              </label>
+            </div>
+            <button class="btn-secondary btn-full" id="originalOnlyBtn" title="원본 이미지만 보기. H를 누르고 있는 동안에도 사람 라벨이 숨겨집니다.">
+              <i class="fas fa-eye-slash"></i> 원본만 보기
+            </button>
+            <div class="ai-panel-divider"></div>
+            <div class="ai-folder-row">
+              <button class="btn-secondary btn-full" id="connectAiFolderBtn" title="표준화된 AI mask PNG 폴더 연결">
+                <i class="fas fa-robot"></i> AI 폴더 연결
+              </button>
+              <button class="btn-icon" id="refreshAiFolderBtn" title="AI 폴더 다시 스캔">
+                <i class="fas fa-sync"></i>
+              </button>
+            </div>
+            <div id="aiFolderStatus" class="ai-folder-status empty">AI mask 폴더가 연결되지 않았습니다</div>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="toggleAiOverlay" checked />
+                <span>AI 결과 보기</span>
+              </label>
+            </div>
+            <div class="control-group">
+              <label>
+                AI 투명도 <span id="aiOpacityValue">45</span>
+              </label>
+              <input type="range" id="aiOpacity" min="0" max="100" value="45" step="1" />
+            </div>
+            <div id="aiRegionControls" class="ai-region-controls"></div>
+            <p class="panel-desc" style="margin-top:8px">
+              파일명 규칙: 원본_AIresult_부위_모델_v0.png
+            </p>
+          </div>
+`
+  const needle = "          <div class=\"sidebar-scroll\">\n          <div class=\"panel panel-full\">"
+  if (!/connectAiFolderBtn/.test(s)) {
+    if (!s.includes(needle)) fail('index ai panel')
+    s = s.replace(needle, "          <div class=\"sidebar-scroll\">\n" + aiPanel + "          <div class=\"panel panel-full\">")
+    console.log('PATCH index ai panel')
+  } else {
+    console.log('OK index ai panel already patched')
+  }
+  // Repair an earlier broken patch that inserted a second sidebar-scroll before the label list.
+  const broken = "          </div>\n          <div class=\"sidebar-scroll\">\n          <div class=\"panel panel-full\">"
+  if (s.includes(broken)) {
+    s = s.replace(broken, "          </div>\n          <div class=\"panel panel-full\">")
+    console.log('PATCH index duplicate sidebar-scroll repair')
+  }
+  write(file, s)
+}
+
+// style.css
+{
+  const file = 'public/static/style.css'
+  let s = read(file)
+  if (!/ai-region-controls/.test(s)) {
+    console.log('PATCH ai overlay styles')
+    s += `
+
+/* ============================================
+   보기 / AI 결과 패널
+   ============================================ */
+.ai-panel-divider { height: 1px; background: var(--border-color); margin: 10px 0; }
+.ai-folder-row { display: grid; grid-template-columns: 1fr 34px; gap: 6px; align-items: center; margin-bottom: 8px; }
+.ai-folder-row .btn-full { margin-top: 0; }
+.ai-folder-status { font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; margin-bottom: 10px; line-height: 1.35; }
+.ai-folder-status.connected { color: var(--accent-green); border-color: rgba(63, 185, 80, 0.35); }
+.ai-region-controls { display: flex; flex-direction: column; gap: 8px; }
+.ai-region-row { display: grid; grid-template-columns: minmax(88px, 0.9fr) minmax(0, 1.1fr); gap: 8px; align-items: center; }
+.ai-region-check { margin-bottom: 0 !important; min-width: 0; }
+.ai-color-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,0.08); flex-shrink: 0; }
+.ai-model-select { padding: 6px 8px; font-size: 12px; }
+.ai-empty { font-size: 12px; color: var(--text-muted); line-height: 1.35; background: rgba(88, 166, 255, 0.08); border: 1px solid rgba(88, 166, 255, 0.18); border-radius: 6px; padding: 8px; }
+#originalOnlyBtn.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+`
+  } else console.log('OK ai overlay styles already patched')
+  write(file, s)
+}
+
+console.log('OK AI overlay patch installed')
