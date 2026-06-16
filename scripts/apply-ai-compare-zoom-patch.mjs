@@ -59,18 +59,19 @@ const helpers = `function initAiCompareZoomControls() {
   if (!stage || stage.dataset.zoomReady === '1') return
   stage.dataset.zoomReady = '1'
 
-  document.getElementById('aiCompareZoomIn')?.addEventListener('click', () => zoomAiCompare(1.25))
-  document.getElementById('aiCompareZoomOut')?.addEventListener('click', () => zoomAiCompare(1 / 1.25))
+  document.getElementById('aiCompareZoomIn')?.addEventListener('click', () => zoomAiCompare(1.08))
+  document.getElementById('aiCompareZoomOut')?.addEventListener('click', () => zoomAiCompare(1 / 1.08))
   document.getElementById('aiCompareZoomReset')?.addEventListener('click', () => resetAiCompareZoom())
 
   stage.addEventListener('wheel', (e) => {
     e.preventDefault()
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-    zoomAiCompare(factor, e.offsetX, e.offsetY)
+    const factor = e.deltaY < 0 ? 1.04 : 1 / 1.04
+    const rect = stage.getBoundingClientRect()
+    zoomAiCompare(factor, e.clientX - rect.left, e.clientY - rect.top)
   }, { passive: false })
 
   stage.addEventListener('pointerdown', (e) => {
-    if ((state.aiCompareZoom || 1) <= 1) return
+    if ((state.aiCompareZoom || 1) <= 1.001) return
     state.aiCompareDragging = true
     state.aiCompareDragStartX = e.clientX
     state.aiCompareDragStartY = e.clientY
@@ -78,6 +79,7 @@ const helpers = `function initAiCompareZoomControls() {
     state.aiCompareStartPanY = state.aiComparePanY || 0
     stage.setPointerCapture?.(e.pointerId)
     stage.classList.add('dragging')
+    e.preventDefault()
   })
 
   stage.addEventListener('pointermove', (e) => {
@@ -85,6 +87,7 @@ const helpers = `function initAiCompareZoomControls() {
     state.aiComparePanX = (state.aiCompareStartPanX || 0) + (e.clientX - state.aiCompareDragStartX)
     state.aiComparePanY = (state.aiCompareStartPanY || 0) + (e.clientY - state.aiCompareDragStartY)
     applyAiCompareTransform()
+    e.preventDefault()
   })
 
   const stopDrag = (e) => {
@@ -92,6 +95,7 @@ const helpers = `function initAiCompareZoomControls() {
     state.aiCompareDragging = false
     stage.releasePointerCapture?.(e.pointerId)
     stage.classList.remove('dragging')
+    e.preventDefault()
   }
   stage.addEventListener('pointerup', stopDrag)
   stage.addEventListener('pointercancel', stopDrag)
@@ -105,7 +109,7 @@ function zoomAiCompare(factor, originX = null, originY = null) {
 
   const oldZoom = state.aiCompareZoom || 1
   const newZoom = Math.max(1, Math.min(8, oldZoom * factor))
-  if (newZoom === oldZoom) return
+  if (Math.abs(newZoom - oldZoom) < 0.001) return
 
   if (originX == null || originY == null) {
     originX = stage.clientWidth / 2
@@ -118,7 +122,13 @@ function zoomAiCompare(factor, originX = null, originY = null) {
   state.aiComparePanX = originX - (originX - px) * ratio
   state.aiComparePanY = originY - (originY - py) * ratio
   state.aiCompareZoom = newZoom
-  clampAiComparePan()
+
+  // 확대가 1배 가까이면 자동으로 맞춤 상태로 복귀합니다.
+  if (state.aiCompareZoom <= 1.01) {
+    state.aiCompareZoom = 1
+    state.aiComparePanX = 0
+    state.aiComparePanY = 0
+  }
   applyAiCompareTransform()
 }
 
@@ -127,22 +137,6 @@ function resetAiCompareZoom() {
   state.aiComparePanX = 0
   state.aiComparePanY = 0
   applyAiCompareTransform()
-}
-
-function clampAiComparePan() {
-  if ((state.aiCompareZoom || 1) <= 1) {
-    state.aiComparePanX = 0
-    state.aiComparePanY = 0
-    return
-  }
-  const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
-  const wrap = document.querySelector('#aiComparePanel .ai-compare-image-wrap')
-  if (!stage || !wrap) return
-  const z = state.aiCompareZoom || 1
-  const maxX = Math.max(0, (wrap.offsetWidth * z - stage.clientWidth) / 2 + 80)
-  const maxY = Math.max(0, (wrap.offsetHeight * z - stage.clientHeight) / 2 + 80)
-  state.aiComparePanX = Math.max(-maxX, Math.min(maxX, state.aiComparePanX || 0))
-  state.aiComparePanY = Math.max(-maxY, Math.min(maxY, state.aiComparePanY || 0))
 }
 
 function applyAiCompareTransform() {
@@ -166,9 +160,10 @@ if (!s.includes('function zoomAiCompare(')) {
   console.log('OK AI compare zoom helper functions already patched')
 }
 
-// Reset zoom when the current original image changes.
+// Reset zoom only when the original image actually changes.
 const imageSet = '  if (base.src !== state.currentImageUrl) base.src = state.currentImageUrl'
-const imageSetZoom = `  if (base.src !== state.currentImageUrl) {
+const imageSetZoom = `  if (base.dataset.currentImageUrl !== state.currentImageUrl) {
+    base.dataset.currentImageUrl = state.currentImageUrl
     base.src = state.currentImageUrl
     resetAiCompareZoom()
   }`
