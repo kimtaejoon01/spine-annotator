@@ -35,6 +35,8 @@ const patches = [
   'apply-annotator-ai-methods-repair.mjs',
   // Hard guard: must run after refactors that may remove AI mask methods.
   'apply-hard-ai-image-load-fix.mjs',
+  // Manual vertebra relabeling: changing one label cascades below it.
+  'apply-cascade-label-reassignment-patch.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
