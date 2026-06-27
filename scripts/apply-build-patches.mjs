@@ -31,6 +31,8 @@ const patches = [
   'apply-human-label-toggles-correct-final.mjs',
   'apply-visibility-module-refactor.mjs',
   'apply-auth-and-notes-module-refactor.mjs',
+  // Must run last: older build patches can insert duplicate helper functions.
+  'apply-generated-js-dedupe.mjs',
 ]
 
 console.log('\n=== Spine Annotator build patches ===')
