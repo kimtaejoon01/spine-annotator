@@ -39,6 +39,7 @@ const patches = [
   'apply-cascade-label-reassignment-patch.mjs',
   // Right sidebar: compact mode and collapsible panels.
   'apply-right-sidebar-compact-ui-patch.mjs',
+  'apply-right-sidebar-compact-ui-call-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
