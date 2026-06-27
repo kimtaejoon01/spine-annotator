@@ -20,6 +20,7 @@ const patches = [
   'apply-notes-patch.mjs',
   'apply-notes-load-repair.mjs',
   'apply-notes-syntax-fix.mjs',
+  'apply-presence-api-compat-patch.mjs',
   'apply-ai-review-page-patch.mjs',
   'apply-ai-review-binary-png-fallback.mjs',
   'apply-ai-review-source-card-quality-patch.mjs',
@@ -31,6 +32,7 @@ const patches = [
   'apply-human-label-toggles-correct-final.mjs',
   'apply-visibility-module-refactor.mjs',
   'apply-auth-and-notes-module-refactor.mjs',
+  'apply-annotator-ai-methods-repair.mjs',
   // Must run last: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
 ]
