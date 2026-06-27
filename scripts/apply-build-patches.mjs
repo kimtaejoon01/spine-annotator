@@ -29,6 +29,7 @@ const patches = [
   'apply-mask-fill-visibility-and-notes-fix.mjs',
   'apply-label-visibility-final-fix.mjs',
   'apply-human-label-toggles-correct-final.mjs',
+  'apply-visibility-module-refactor.mjs',
 ]
 
 console.log('\n=== Spine Annotator build patches ===')
