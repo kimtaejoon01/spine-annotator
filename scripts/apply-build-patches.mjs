@@ -33,8 +33,12 @@ const patches = [
   'apply-visibility-module-refactor.mjs',
   'apply-auth-and-notes-module-refactor.mjs',
   'apply-annotator-ai-methods-repair.mjs',
-  // Must run last: older build patches can insert duplicate helper functions.
+  // Hard guard: must run after refactors that may remove AI mask methods.
+  'apply-hard-ai-image-load-fix.mjs',
+  // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
+  // Must run last: fail the build if critical runtime guards are missing.
+  'verify-build-output.mjs',
 ]
 
 console.log('\n=== Spine Annotator build patches ===')
