@@ -1,6 +1,3 @@
-#!/usr/bin/env node
-
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 
 const patches = [
@@ -50,6 +47,7 @@ const patches = [
   'apply-pelvis-panel-collapse-hard-fix.mjs',
   // Current-image sagittal alignment measurements.
   'apply-sagittal-measurements-patch.mjs',
+  'apply-measurement-debug-overlay-patch.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
@@ -60,14 +58,9 @@ console.log('\n=== Spine Annotator build patches ===')
 for (const patch of patches) {
   const path = `scripts/${patch}`
   if (!fs.existsSync(path)) {
-    console.log(`SKIP missing ${path}`)
-    continue
+    throw new Error(`Missing build patch: ${path}`)
   }
   console.log(`\n--- ${patch} ---`)
-  const result = spawnSync(process.execPath, [path], { stdio: 'inherit', shell: false })
-  if (result.status !== 0) {
-    console.error(`\nBuild patch failed: ${patch}`)
-    process.exit(result.status ?? 1)
-  }
+  await import(`./${patch}`)
 }
-console.log('\n=== Build patches complete ===\n')
+console.log('\n=== Build patches complete ===')
