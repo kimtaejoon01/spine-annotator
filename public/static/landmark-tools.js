@@ -2,6 +2,7 @@
    LAT five-point landmark tools
    - Keeps polygon segmentation labels intact
    - Adds measurement/keypoint landmarks for heatmap training
+   - UI assumes left-facing LAT images: image-left = anterior, image-right = posterior.
    ================================================================ */
 
 const VERTEBRAE_FULL = [
@@ -9,12 +10,16 @@ const VERTEBRAE_FULL = [
   'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12',
   'L1', 'L2', 'L3', 'L4', 'L5',
 ]
-const POINTS_5 = ['SUP_POST', 'SUP_ANT', 'INF_ANT', 'INF_POST', 'CENTER']
+
+// Left-facing LAT screen order:
+// upper-left -> upper-right -> lower-right -> lower-left -> center.
+// Internally these are stored as anatomical labels so training/export stay meaningful.
+const POINTS_5 = ['SUP_ANT', 'SUP_POST', 'INF_POST', 'INF_ANT', 'CENTER']
 
 export const LAT_5POINT_SEQUENCE = [
   ...VERTEBRAE_FULL.flatMap(v => POINTS_5.map(p => `${v}_${p}`)),
-  'S1_SUP_POST',
   'S1_SUP_ANT',
+  'S1_SUP_POST',
   'S1_CENTER',
   'HC_LAT',
 ]
@@ -146,7 +151,7 @@ export function installLat5PointLandmarks({ annotator, getViewType, onChange } =
       group.add(new Konva.Text({
         x: 7 / scale,
         y: -7 / scale,
-        text: lm.label,
+        text: displayLandmarkLabel(lm.label, true),
         fontSize: 10 / scale,
         fontStyle: 'bold',
         fill: '#ffffff',
@@ -157,9 +162,10 @@ export function installLat5PointLandmarks({ annotator, getViewType, onChange } =
         const pos = group.position()
         lm.x = pos.x
         lm.y = pos.y
-        this.renderLandmarks()
+        this.landmarkLayer.batchDraw()
       })
       group.on('dragend', () => {
+        this.renderLandmarks()
         onChange?.()
         renderPanel()
       })
@@ -211,7 +217,7 @@ export function installLat5PointLandmarks({ annotator, getViewType, onChange } =
       <div class="landmark-progress"><strong>${completed}</strong> / ${LAT_5POINT_SEQUENCE.length} points</div>
       <div class="landmark-current ${annotator.pendingLandmark ? 'active' : ''}">
         <span>현재 점</span>
-        <strong>${escapeHtml(annotator.pendingLandmark || current)}</strong>
+        <strong>${escapeHtml(displayLandmarkLabel(annotator.pendingLandmark || current))}</strong>
       </div>
       <div class="landmark-actions">
         <button type="button" data-lm-start>${annotator.pendingLandmark ? '찍기 중' : '전체 시작'}</button>
@@ -222,7 +228,7 @@ export function installLat5PointLandmarks({ annotator, getViewType, onChange } =
       <div class="landmark-actions landmark-actions-danger">
         <button type="button" data-lm-clear>랜드마크 전체 삭제</button>
       </div>
-      <p class="landmark-help">순서: 각 척추 SUP_POST → SUP_ANT → INF_ANT → INF_POST → CENTER, 마지막 S1/HC_LAT. 점은 드래그로 수정, 더블클릭/우클릭으로 삭제.</p>
+      <p class="landmark-help">왼쪽을 보는 LAT 기준으로 위-왼쪽 → 위-오른쪽 → 아래-오른쪽 → 아래-왼쪽 → 중심 순서입니다. 내부 저장은 ANT/POST로 자동 변환됩니다. 점은 드래그로 수정, 더블클릭/우클릭으로 삭제.</p>
     `
 
     el.querySelector('[data-lm-start]')?.addEventListener('click', () => {
@@ -283,6 +289,23 @@ function landmarkColor(label) {
   if (text.includes('INF')) return '#38bdf8'
   if (text === 'HC_LAT') return '#ec4899'
   return '#ffffff'
+}
+
+function displayLandmarkLabel(label, compact = false) {
+  const text = String(label || '').toUpperCase()
+  if (!text) return ''
+  if (text === 'HC_LAT') return compact ? 'HC' : 'HC_LAT / 고관절 중심'
+  const parts = text.split('_')
+  const target = parts[0] || ''
+  const suffix = parts.slice(1).join('_')
+  const map = {
+    SUP_ANT: compact ? '위-왼' : '위-왼쪽',
+    SUP_POST: compact ? '위-오' : '위-오른쪽',
+    INF_POST: compact ? '아래-오' : '아래-오른쪽',
+    INF_ANT: compact ? '아래-왼' : '아래-왼쪽',
+    CENTER: '중심',
+  }
+  return `${target} ${map[suffix] || suffix}`
 }
 
 function escapeHtml(text) {
