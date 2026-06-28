@@ -37,6 +37,8 @@ const patches = [
   'apply-hard-ai-image-load-fix.mjs',
   // Manual vertebra relabeling: changing one label cascades below it.
   'apply-cascade-label-reassignment-patch.mjs',
+  // Femoral head / hip center labeling.
+  'apply-pelvis-labels-patch.mjs',
   // Right sidebar: compact mode, collapsible panels, and label list layout.
   'apply-right-sidebar-compact-ui-patch.mjs',
   'apply-right-sidebar-compact-ui-call-fix.mjs',
