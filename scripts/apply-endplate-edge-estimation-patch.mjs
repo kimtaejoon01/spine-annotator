@@ -84,7 +84,7 @@ function gatherSimilarEndplatePoints(candidates, best, w, h) {
 }
 
 function addUniquePoint(out, seen, p) {
-  const key = `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`
+  const key = String(Math.round(p.x * 10) / 10) + ',' + String(Math.round(p.y * 10) / 10)
   if (seen.has(key)) return
   seen.add(key)
   out.push(p)
