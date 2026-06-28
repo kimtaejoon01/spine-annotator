@@ -10,6 +10,37 @@ function save(file, before, after, label) {
 }
 
 // -----------------------------------------------------------------------------
+// measurements.js: prefer LAT hip-center labels for LAT sagittal measurements.
+// -----------------------------------------------------------------------------
+{
+  const file = 'public/static/measurements.js'
+  if (fs.existsSync(file)) {
+    const before = read(file)
+    let s = before
+
+    s = s.replace(
+      "if (!hip) missing.push('PT/PI: HC_L/HC_R 또는 FH_L/FH_R')",
+      "if (!hip) missing.push('PT/PI: LAT은 HC_LAT 또는 FH_LAT')"
+    )
+
+    s = s.replace(
+      `function estimateHipCenter(byLabel) {
+  const hcL = labelPoint(byLabel, 'HC_L')`,
+      `function estimateHipCenter(byLabel) {
+  const hcLat = labelPoint(byLabel, 'HC_LAT')
+  if (hcLat) return hcLat
+
+  const fhLat = labelPoint(byLabel, 'FH_LAT')
+  if (fhLat) return fhLat
+
+  const hcL = labelPoint(byLabel, 'HC_L')`
+    )
+
+    save(file, before, s, 'sagittal LAT hip labels')
+  }
+}
+
+// -----------------------------------------------------------------------------
 // app.js: wire sagittal measurement panel into polygon updates.
 // -----------------------------------------------------------------------------
 {
