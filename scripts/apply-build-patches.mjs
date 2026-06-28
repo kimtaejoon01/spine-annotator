@@ -48,6 +48,8 @@ const patches = [
   'apply-right-sidebar-layout-repair.mjs',
   'apply-pelvis-runtime-final-fix.mjs',
   'apply-pelvis-panel-collapse-hard-fix.mjs',
+  // Current-image sagittal alignment measurements.
+  'apply-sagittal-measurements-patch.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
