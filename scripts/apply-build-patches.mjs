@@ -48,6 +48,7 @@ const patches = [
   // Current-image sagittal alignment measurements.
   'apply-sagittal-measurements-patch.mjs',
   'apply-measurement-debug-overlay-patch.mjs',
+  'apply-endplate-edge-estimation-patch.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
