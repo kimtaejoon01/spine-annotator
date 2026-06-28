@@ -39,6 +39,7 @@ const patches = [
   'apply-cascade-label-reassignment-patch.mjs',
   // Femoral head / hip center labeling.
   'apply-pelvis-labels-patch.mjs',
+  'apply-pelvis-label-controls-call-fix.mjs',
   // Right sidebar: compact mode, collapsible panels, and label list layout.
   'apply-right-sidebar-compact-ui-patch.mjs',
   'apply-right-sidebar-compact-ui-call-fix.mjs',
