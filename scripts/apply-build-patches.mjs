@@ -42,10 +42,11 @@ const patches = [
   'apply-pelvis-label-controls-call-fix.mjs',
   'apply-lat-pelvis-labels-patch.mjs',
   'apply-pelvis-label-behavior-fix.mjs',
-  // Right sidebar: compact mode, collapsible panels, and label list layout.
+  // Final runtime guard must run after sidebar patches because it also fixes panel collapse behavior.
   'apply-right-sidebar-compact-ui-patch.mjs',
   'apply-right-sidebar-compact-ui-call-fix.mjs',
   'apply-right-sidebar-layout-repair.mjs',
+  'apply-pelvis-runtime-final-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
