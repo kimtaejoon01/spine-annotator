@@ -53,6 +53,7 @@ const patches = [
   'apply-lat-5point-landmarks-runtime-fix.mjs',
   'apply-right-sidebar-scroll-measure-collapse-fix.mjs',
   'apply-lat-landmark-version-compact-label-fix.mjs',
+  'apply-lat-4corner-no-exit-guard.mjs',
   'apply-lat-4corner-centroid-mode-patch.mjs',
   'apply-lat-landmark-collapse-delete-key-patch.mjs',
   'apply-ai-compare-helper-dedupe-hard-fix.mjs',
