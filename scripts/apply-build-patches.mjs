@@ -62,6 +62,7 @@ const patches = [
   'apply-landmark-file-switch-reset-patch.mjs',
   'apply-landmark-save-persistence-patch.mjs',
   'apply-landmark-immediate-save-patch.mjs',
+  'apply-landmark-backend-parse-final-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
