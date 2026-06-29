@@ -55,6 +55,7 @@ const patches = [
   'apply-lat-landmark-version-compact-label-fix.mjs',
   'apply-lat-4corner-centroid-mode-patch.mjs',
   'apply-lat-landmark-collapse-delete-key-patch.mjs',
+  'apply-ai-compare-helper-dedupe-hard-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
