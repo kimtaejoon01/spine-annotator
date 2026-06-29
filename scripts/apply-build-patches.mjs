@@ -57,6 +57,7 @@ const patches = [
   'apply-lat-landmark-collapse-delete-key-patch.mjs',
   'apply-ai-compare-helper-dedupe-hard-fix.mjs',
   'apply-landmark-mode-toolbar-patch.mjs',
+  'apply-landmark-mode-toolbar-visibility-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
