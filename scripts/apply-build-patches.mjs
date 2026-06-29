@@ -51,6 +51,7 @@ const patches = [
   'apply-endplate-edge-estimation-patch.mjs',
   'apply-lat-5point-landmarks-patch.mjs',
   'apply-lat-5point-landmarks-runtime-fix.mjs',
+  'apply-right-sidebar-scroll-measure-collapse-fix.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
