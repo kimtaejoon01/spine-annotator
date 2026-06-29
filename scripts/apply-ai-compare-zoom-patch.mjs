@@ -52,7 +52,10 @@ const newCloseBlock = `  document.getElementById('closeAiComparePanel')?.addEven
 }`
 replaceOnce('AI compare zoom controls init', oldCloseBlock, newCloseBlock)
 
-// Insert helper functions before updateAiComparePanel.
+// Insert helper functions before updateAiComparePanel. Be idempotent with the
+// newer main-wheel-quality patch, which replaces zoomAiCompare() with
+// zoomAiCompareAtPoint(). Checking only zoomAiCompare() caused this patch to
+// reinsert a second initAiCompareZoomControls() on every dev run.
 const helperNeedle = 'async function updateAiComparePanel(maskItems = []) {'
 const helpers = `function initAiCompareZoomControls() {
   const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
@@ -123,7 +126,6 @@ function zoomAiCompare(factor, originX = null, originY = null) {
   state.aiComparePanY = originY - (originY - py) * ratio
   state.aiCompareZoom = newZoom
 
-  // 확대가 1배 가까이면 자동으로 맞춤 상태로 복귀합니다.
   if (state.aiCompareZoom <= 1.01) {
     state.aiCompareZoom = 1
     state.aiComparePanX = 0
@@ -151,7 +153,7 @@ function applyAiCompareTransform() {
 }
 
 `
-if (!s.includes('function zoomAiCompare(')) {
+if (!s.includes('function initAiCompareZoomControls(')) {
   if (!s.includes(helperNeedle)) throw new Error('Patch failed: AI compare zoom helper needle')
   s = s.replace(helperNeedle, helpers + helperNeedle)
   console.log('PATCH AI compare zoom helper functions')
