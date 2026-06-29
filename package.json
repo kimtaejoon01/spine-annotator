@@ -2,13 +2,13 @@
   "name": "webapp",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/apply-build-patches.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
+    "predev": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/apply-build-patches.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
+    "prebuild": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
     "build": "npm run prebuild && vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
   },
   "dependencies": {"hono": "^4.12.25"},
-  "devDependencies": {"@cloudflare/workers-types": "^4.12.25", "@hono/vite-build": "^1.2.0", "@hono/vite-dev-server": "^0.18.2", "vite": "^6.3.5", "wrangler": "^4.4.0"}
+  "devDependencies": {"@cloudflare/workers-types": "^4.12.25", "@hono/vite-build": "^1.2.0", "vite": "^6.3.5", "wrangler": "^4.4.0", "@hono/vite-dev-server": "^0.18.2"}
 }
