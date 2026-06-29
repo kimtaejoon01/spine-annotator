@@ -2,6 +2,7 @@
   "name": "webapp",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/apply-build-patches.mjs",
     "dev": "vite",
     "prebuild": "node scripts/apply-build-patches.mjs",
     "build": "npm run prebuild && vite build",
