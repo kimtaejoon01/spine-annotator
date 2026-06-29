@@ -45,11 +45,12 @@ function findBlock(source, start) {
 }
 
 function removeDuplicateFunction(name) {
-  const re = new RegExp('^function\\s+' + name + '\\s*\\(', 'gm')
+  const re = new RegExp('(^|\\n)([ \\t]*)function\\s+' + name + '\\s*\\(', 'g')
   const blocks = []
   let m
   while ((m = re.exec(s))) {
-    const block = findBlock(s, m.index)
+    const fnStart = m.index + m[1].length
+    const block = findBlock(s, fnStart)
     if (block) blocks.push(block)
   }
   if (blocks.length <= 1) return
