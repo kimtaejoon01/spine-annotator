@@ -20,38 +20,80 @@ if (!s.includes('function parseStoredLabelData')) {
   )
 }
 
-// GET single label must unpack {polygons, landmarks}; otherwise the frontend sees
-// data.landmarks as undefined and reloads an empty landmark layer.
-if (!s.includes('const parsed = parseStoredLabelData(row.polygons_json)')) {
-  s = s.replace(
-    `    let polygons: any[] = []\n    try {\n      polygons = JSON.parse(row.polygons_json || '[]')\n    } catch {}\n`,
-    `    const parsed = parseStoredLabelData(row.polygons_json)\n    const polygons = parsed.polygons\n    const landmarks = parsed.landmarks\n`
-  )
-}
-if (!s.includes('      landmarks,\n      labeler_id: row.labeler_id,')) {
-  s = s.replace(
-    `      polygons,\n      labeler_id: row.labeler_id,`,
-    `      polygons,\n      landmarks,\n      labeler_id: row.labeler_id,`
-  )
+// Force-replace the whole GET endpoint. Earlier versions checked for
+// parseStoredLabelData anywhere in the file, so the raw-export parse could make
+// this patch think the single-file GET route was fixed when it was not.
+const getStart = s.indexOf("api.get('/labels/:filename'")
+const putMarker = `\n// ----------------------------------------------------------------\n// PUT /api/labels/:filename`
+const putIndex = s.indexOf(putMarker)
+if (getStart !== -1 && putIndex !== -1 && putIndex > getStart) {
+  const getBlock = `api.get('/labels/:filename', async (c) => {
+  const filename = decodeURIComponent(c.req.param('filename'))
+  try {
+    const row = await c.env.DB.prepare(\`
+      SELECT * FROM labels WHERE filename = ?
+    \`).bind(filename).first<any>()
+
+    if (!row) {
+      return c.json({ ok: true, exists: false })
+    }
+
+    const parsed = parseStoredLabelData(row.polygons_json)
+    const polygons = parsed.polygons
+    const landmarks = parsed.landmarks
+
+    return c.json({
+      ok: true,
+      exists: true,
+      filename: row.filename,
+      view_type: row.view_type,
+      start_label: row.start_label,
+      image_width: row.image_width ?? null,
+      image_height: row.image_height ?? null,
+      polygons,
+      landmarks,
+      labeler_id: row.labeler_id,
+      polygon_count: row.polygon_count,
+      updated_at: row.updated_at,
+      created_at: row.created_at,
+      version: row.version,
+    })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+`
+  const current = s.slice(getStart, putIndex)
+  if (current !== getBlock) {
+    s = s.slice(0, getStart) + getBlock + s.slice(putIndex)
+  }
 }
 
-// PUT must store landmarks together with polygons, and allow landmark-only rows.
-if (!s.includes('const landmarks = Array.isArray(body.landmarks) ? body.landmarks : []')) {
-  s = s.replace(
-    `  const polygons = Array.isArray(body.polygons) ? body.polygons : []\n  const polygonsJson = JSON.stringify(polygons)`,
-    `  const polygons = Array.isArray(body.polygons) ? body.polygons : []\n  const landmarks = Array.isArray(body.landmarks) ? body.landmarks : []\n  const polygonsJson = landmarks.length > 0 ? JSON.stringify({ polygons, landmarks }) : JSON.stringify(polygons)`
-  )
-}
+// Force PUT to store {polygons, landmarks} and allow landmark-only rows.
+s = s.replace(
+  /  const polygons = Array\.isArray\(body\.polygons\) \? body\.polygons : \[\][\s\S]*?  const now = new Date\(\)\.toISOString\(\)/,
+  `  const polygons = Array.isArray(body.polygons) ? body.polygons : []
+  const landmarks = Array.isArray(body.landmarks) ? body.landmarks : []
+  const polygonsJson = landmarks.length > 0 ? JSON.stringify({ polygons, landmarks }) : JSON.stringify(polygons)
+  const now = new Date().toISOString()`
+)
 s = s.replace(
   `    if (polyCount === 0 && !existing) {`,
   `    if (polyCount === 0 && landmarks.length === 0 && !existing) {`
 )
 
 // Raw export should expose parsed landmarks too.
-if (!s.includes('items: rows.map(row =>')) {
+if (!s.includes('items: rows.map((row: any) =>')) {
   s = s.replace(
-    `    if (format === 'raw') {\n      return c.json({ ok: true, items: rows })\n    }`,
-    `    if (format === 'raw') {\n      return c.json({ ok: true, items: rows.map((row: any) => {\n        const parsed = parseStoredLabelData(row.polygons_json)\n        return { ...row, polygons: parsed.polygons, landmarks: parsed.landmarks }\n      }) })\n    }`
+    `    if (format === 'raw') {
+      return c.json({ ok: true, items: rows })
+    }`,
+    `    if (format === 'raw') {
+      return c.json({ ok: true, items: rows.map((row: any) => {
+        const parsed = parseStoredLabelData(row.polygons_json)
+        return { ...row, polygons: parsed.polygons, landmarks: parsed.landmarks }
+      }) })
+    }`
   )
 }
 
