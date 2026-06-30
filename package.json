@@ -2,9 +2,9 @@
   "name": "webapp",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
+    "predev": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-mode-isolated-polygon-fill.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
+    "prebuild": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-mode-isolated-polygon-fill.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
     "build": "npm run prebuild && vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
