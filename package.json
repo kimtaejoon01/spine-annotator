@@ -10,7 +10,8 @@
     "db:migrate:local": "wrangler d1 migrations apply spine-annotator-production --local",
     "db:migrate:remote": "wrangler d1 migrations apply spine-annotator-production --remote",
     "secret:auth": "wrangler pages secret put AUTH_PASSWORD --project-name spine-annotator",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
+    "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator --branch main",
+    "deploy:preview": "npm run build && wrangler pages deploy dist --project-name spine-annotator --branch sagittal-measurements"
   },
   "dependencies": {"hono": "^4.12.25"},
   "devDependencies": {"@cloudflare/workers-types": "^4.12.25", "@hono/vite-build": "^1.2.0", "vite": "^6.3.5", "wrangler": "^4.4.0", "@hono/vite-dev-server": "^0.18.2"}
