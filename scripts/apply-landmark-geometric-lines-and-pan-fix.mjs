@@ -57,4 +57,6 @@ const save = (f, a, b, label) => { if (a === b) console.log('OK ' + label + ' al
   save(f, before, s, 'pan-safe landmark clicks')
 }
 
+await import('./apply-landmark-list-and-shift-fix.mjs')
+
 console.log('OK geometric landmark lines and pan guard installed')
