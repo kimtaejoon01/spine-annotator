@@ -17,3 +17,5 @@ if (s !== before) {
 } else {
   console.log('OK COCO ALL_LABELS hard repair already patched')
 }
+
+await import('./apply-landmark-list-hard-v2.mjs')
