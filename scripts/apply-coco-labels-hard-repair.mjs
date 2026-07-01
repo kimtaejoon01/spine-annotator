@@ -19,3 +19,4 @@ if (s !== before) {
 }
 
 await import('./apply-landmark-list-hard-v2.mjs')
+await import('./apply-landmark-list-v2-wrapper-fix.mjs')
