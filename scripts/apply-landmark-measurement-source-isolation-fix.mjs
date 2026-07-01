@@ -48,4 +48,6 @@ const save = (f, a, b, label) => { if (a === b) console.log('OK ' + label + ' al
   save(file, before, s, 'measurement refresh on landmark mode switch')
 }
 
+await import('./apply-landmark-geometric-lines-and-pan-fix.mjs')
+
 console.log('OK landmark-only measurement source installed')
