@@ -68,8 +68,11 @@ if (!s.includes('Before this version the UI used anatomical names directly')) {
   }
 
   annotator.renderLandmarks = function renderLandmarks() {`
-  if (!re.test(s)) throw new Error('loadLandmarks block not found')
-  s = s.replace(re, replacement)
+  if (re.test(s)) {
+    s = s.replace(re, replacement)
+  } else {
+    console.log('OK loadLandmarks block not found; skipping legacy version patch because later landmark rewrite owns this file')
+  }
 }
 
 if (!s.includes('ignoredLegacyCount = 0\n    const existing')) {
@@ -128,8 +131,11 @@ if (!s.includes("SUP_ANT: '1'")) {
   if (compact) return \`\${target} \${compactMap[suffix] || suffix}\`
   return \`\${target} \${fullMap[suffix] || suffix}\`
 }`
-  if (!re.test(s)) throw new Error('displayLandmarkLabel block not found')
-  s = s.replace(re, replacement)
+  if (re.test(s)) {
+    s = s.replace(re, replacement)
+  } else {
+    console.log('OK displayLandmarkLabel block not found; skipping compact label patch because later landmark rewrite owns this file')
+  }
 }
 
 save(file, before, s, 'LAT landmark version + compact labels')
