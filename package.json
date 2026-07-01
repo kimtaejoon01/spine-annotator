@@ -5,8 +5,11 @@
     "predev": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-mode-isolated-polygon-fill.mjs && node scripts/apply-landmark-mode-visibility-hard-fix.mjs && node scripts/apply-landmark-mode-full-isolation-fix.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-keybindings-and-convex-fill-fix.mjs && node scripts/apply-landmark-tools-safe-rewrite.mjs && node scripts/apply-landmark-disable-freehand-mode.mjs && node scripts/apply-landmark-large-zoom-stable-fix.mjs && node scripts/apply-landmark-zoom-grow-visual-fix.mjs && node scripts/apply-landmark-driven-measurements-fix.mjs && node scripts/apply-landmark-measurement-source-isolation-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
     "dev": "vite",
     "prebuild": "node scripts/apply-build-patches.mjs && node scripts/apply-landmark-mode-isolated-polygon-fill.mjs && node scripts/apply-landmark-mode-visibility-hard-fix.mjs && node scripts/apply-landmark-mode-full-isolation-fix.mjs && node scripts/apply-landmark-visual-compact-fix.mjs && node scripts/apply-landmark-keybindings-and-convex-fill-fix.mjs && node scripts/apply-landmark-tools-safe-rewrite.mjs && node scripts/apply-landmark-disable-freehand-mode.mjs && node scripts/apply-landmark-large-zoom-stable-fix.mjs && node scripts/apply-landmark-zoom-grow-visual-fix.mjs && node scripts/apply-landmark-driven-measurements-fix.mjs && node scripts/apply-landmark-measurement-source-isolation-fix.mjs && node scripts/apply-landmark-loadlabels-hard-replace.mjs && node scripts/apply-landmark-visible-restore-hard-fix.mjs && node scripts/apply-landmark-current-export-fix.mjs && node scripts/apply-coco-labels-hard-repair.mjs",
-    "build": "npm run prebuild && vite build",
-    "preview": "wrangler pages dev",
+    "build": "vite build",
+    "preview": "wrangler pages dev dist --d1 DB=spine-annotator-production",
+    "db:migrate:local": "wrangler d1 migrations apply spine-annotator-production --local",
+    "db:migrate:remote": "wrangler d1 migrations apply spine-annotator-production --remote",
+    "secret:auth": "wrangler pages secret put AUTH_PASSWORD --project-name spine-annotator",
     "deploy": "npm run build && wrangler pages deploy dist --project-name spine-annotator"
   },
   "dependencies": {"hono": "^4.12.25"},
