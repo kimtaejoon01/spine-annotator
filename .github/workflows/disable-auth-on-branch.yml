@@ -1,0 +1,80 @@
+name: Disable auth on sagittal branch
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - sagittal-measurements
+    paths:
+      - .github/workflows/disable-auth-on-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  disable-auth:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: sagittal-measurements
+          fetch-depth: 0
+
+      - name: Remove password gate from backend and frontend
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+
+          function replaceBetween(text, startMarker, endMarker, replacement, file) {
+            const start = text.indexOf(startMarker)
+            const end = text.indexOf(endMarker)
+            if (start < 0 || end < 0 || end <= start) {
+              throw new Error(`Could not find auth block markers in ${file}`)
+            }
+            return text.slice(0, start) + replacement + text.slice(end)
+          }
+
+          const backendFile = 'src/api.ts'
+          let backend = fs.readFileSync(backendFile, 'utf8').replace(/\r\n/g, '\n')
+          backend = replaceBetween(
+            backend,
+            '// 운영 비밀번호는 반드시 Cloudflare Pages secret(AUTH_PASSWORD) 또는 로컬 .dev.vars로 주입합니다.',
+            '// ----------------------------------------------------------------\n// GET /api/labels - 모든 파일의 라벨 메타 (목록용)',
+            `// ----------------------------------------------------------------\n// 인증 비활성화 - sagittal-measurements 브랜치/preview 전용\n// ----------------------------------------------------------------\napi.use('*', async (_c, next) => {\n  return next()\n})\n\n// ----------------------------------------------------------------\n// POST /api/auth/check - 로그인 제거: 항상 성공\n// ----------------------------------------------------------------\napi.post('/auth/check', async (c) => {\n  return c.json({ ok: true, token: 'public-access', auth_disabled: true })\n})\n\n`,
+            backendFile
+          )
+          fs.writeFileSync(backendFile, backend)
+
+          const frontendFile = 'public/static/api.js'
+          let frontend = fs.readFileSync(frontendFile, 'utf8').replace(/\r\n/g, '\n')
+          frontend = replaceBetween(
+            frontend,
+            'const TOKEN_KEY =',
+            '// ----------------------------------------------------------------\n// 라벨 API',
+            `const TOKEN_KEY = 'spine-annotator:authToken'\nconst CACHE_PREFIX = 'spine-annotator-cache:'\nconst PUBLIC_TOKEN = 'public-access'\n\n// ----------------------------------------------------------------\n// 인증 토큰 관리 - 이 브랜치에서는 로그인 없이 통과\n// ----------------------------------------------------------------\nexport function getAuthToken() {\n  return PUBLIC_TOKEN\n}\n\nexport function setAuthToken(token) {\n  try { localStorage.setItem(TOKEN_KEY, token || PUBLIC_TOKEN) } catch {}\n}\n\nexport function hasAuthToken() {\n  return true\n}\n\n// ----------------------------------------------------------------\n// 비밀번호 검증 - 로그인 제거: 항상 성공\n// ----------------------------------------------------------------\nexport async function verifyPassword(_password) {\n  setAuthToken(PUBLIC_TOKEN)\n  return { ok: true, token: PUBLIC_TOKEN, auth_disabled: true }\n}\n\n// ----------------------------------------------------------------\n// 공통 fetch 래퍼\n// ----------------------------------------------------------------\nasync function apiFetch(path, opts = {}) {\n  const headers = {\n    'Content-Type': 'application/json',\n    ...(opts.headers || {}),\n    'X-Auth-Token': PUBLIC_TOKEN,\n  }\n\n  const res = await fetch(path, { ...opts, headers })\n\n  if (res.status === 401) {\n    const err = new Error('인증이 비활성화된 브랜치인데 서버가 401을 반환했습니다. 최신 preview 배포인지 확인해주세요.')\n    err.status = 401\n    throw err\n  }\n\n  if (!res.ok) {\n    let msg = \`서버 오류 (\${res.status})\`\n    try {\n      const data = await res.json()\n      msg = data.error || data.message || msg\n    } catch {}\n    const err = new Error(msg)\n    err.status = res.status\n    throw err\n  }\n\n  return res.json()\n}\n\n`,
+            frontendFile
+          )
+          fs.writeFileSync(frontendFile, frontend)
+          NODE
+
+      - name: Verify no auth password requirement remains in backend gate
+        run: |
+          if grep -n "AUTH_PASSWORD가 설정되지 않았습니다" src/api.ts; then
+            echo "Backend still requires AUTH_PASSWORD"
+            exit 1
+          fi
+          npm run build
+
+      - name: Commit auth removal
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/api.ts public/static/api.js
+          if git diff --cached --quiet; then
+            echo "No auth changes to commit."
+          else
+            git commit -m "Disable password login on sagittal branch"
+            git push origin sagittal-measurements
+          fi
