@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs'
+import { spawnSync } from 'node:child_process'
 
 const checks = [
   {
@@ -57,6 +58,16 @@ const checks = [
   },
 ]
 
+const syntaxFiles = [
+  'public/static/app.js',
+  'public/static/annotator.js',
+  'public/static/api.js',
+  'public/static/coco.js',
+  'public/static/labels.js',
+  'public/static/landmark-tools.js',
+  'public/static/measurements.js',
+]
+
 let failed = false
 for (const check of checks) {
   if (!fs.existsSync(check.file)) {
@@ -72,6 +83,23 @@ for (const check of checks) {
     } else {
       console.log(`VERIFY OK ${check.file}: ${token}`)
     }
+  }
+}
+
+for (const file of syntaxFiles) {
+  if (!fs.existsSync(file)) {
+    console.error(`VERIFY FAIL missing JS file: ${file}`)
+    failed = true
+    continue
+  }
+  const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    console.error(`VERIFY FAIL syntax check: ${file}`)
+    if (result.stdout) console.error(result.stdout.trim())
+    if (result.stderr) console.error(result.stderr.trim())
+    failed = true
+  } else {
+    console.log(`VERIFY OK syntax: ${file}`)
   }
 }
 
