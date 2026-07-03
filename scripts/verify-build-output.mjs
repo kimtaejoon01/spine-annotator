@@ -9,6 +9,9 @@ const checks = [
       'async loadAiMasks(items = [])',
       'clearAiMasks()',
       "typeof this.clearAiMasks === 'function'",
+      'setMeasurementDebugOverlay(result',
+      'renderMeasurementDebugOverlay()',
+      'measurementLayer.destroyChildren()',
     ],
   },
   {
@@ -16,6 +19,38 @@ const checks = [
     required: [
       "api.put('/presence'",
       "api.delete('/presence'",
+      'function parseStoredLabelData',
+      'const landmarks = Array.isArray(body.landmarks) ? body.landmarks : []',
+      'polygonsJson = landmarks.length > 0',
+    ],
+  },
+  {
+    file: 'public/static/app.js',
+    required: [
+      "from './measurements.js'",
+      'function refreshSagittalMeasurements()',
+      'landmarks: state.annotator.getLandmarks?.() || []',
+      'async function persistCurrentLabelsNow(',
+      'function normalizeLoadedLabelPayload(data)',
+    ],
+  },
+  {
+    file: 'public/static/measurements.js',
+    required: [
+      'export function calculateSagittalMeasurements(polygons = [], landmarks = [])',
+      'function mergeLandmarksIntoMeasurementPolygons',
+      'const landmarkPreferred = polys.find',
+      'function syncMeasurementDebugOverlay(result)',
+      "label: 'HC_LAT'",
+    ],
+  },
+  {
+    file: 'public/static/landmark-tools.js',
+    required: [
+      'export const LAT_5POINT_SEQUENCE',
+      'export function installLat5PointLandmarks',
+      'annotator.getLandmarks = function getLandmarks()',
+      'annotator.loadLandmarks = function loadLandmarks(landmarks)',
     ],
   },
 ]
