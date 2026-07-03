@@ -1,0 +1,57 @@
+name: Absorb build patches
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - sagittal-measurements
+    paths:
+      - .github/workflows/absorb-build-patches.yml
+
+permissions:
+  contents: write
+
+jobs:
+  absorb:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: sagittal-measurements
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply existing build patches once
+        run: node scripts/apply-build-patches.mjs
+
+      - name: Simplify package build scripts
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
+          pkg.scripts = pkg.scripts || {}
+          pkg.scripts.predev = 'node scripts/verify-build-output.mjs'
+          pkg.scripts.prebuild = 'node scripts/verify-build-output.mjs'
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+      - name: Verify absorbed source
+        run: node scripts/verify-build-output.mjs
+
+      - name: Commit absorbed source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src public/static
+          if git diff --cached --quiet; then
+            echo "No absorbed source changes to commit."
+          else
+            git commit -m "Absorb build patches into source"
+            git push origin sagittal-measurements
+          fi

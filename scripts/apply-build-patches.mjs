@@ -1,6 +1,3 @@
-#!/usr/bin/env node
-
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 
 const patches = [
@@ -48,6 +45,44 @@ const patches = [
   'apply-right-sidebar-layout-repair.mjs',
   'apply-pelvis-runtime-final-fix.mjs',
   'apply-pelvis-panel-collapse-hard-fix.mjs',
+  // Current-image sagittal alignment measurements.
+  'apply-sagittal-measurements-patch.mjs',
+  'apply-measurement-debug-overlay-patch.mjs',
+  'apply-endplate-edge-estimation-patch.mjs',
+  'apply-lat-5point-landmarks-patch.mjs',
+  'apply-lat-5point-landmarks-runtime-fix.mjs',
+  'apply-right-sidebar-scroll-measure-collapse-fix.mjs',
+  'apply-lat-landmark-version-compact-label-fix.mjs',
+  'apply-lat-4corner-no-exit-guard.mjs',
+  'apply-lat-4corner-centroid-mode-patch.mjs',
+  'apply-lat-landmark-collapse-delete-key-patch.mjs',
+  'apply-ai-compare-helper-dedupe-hard-fix.mjs',
+  'apply-landmark-mode-toolbar-patch.mjs',
+  'apply-landmark-mode-toolbar-visibility-fix.mjs',
+  'apply-landmark-file-switch-reset-patch.mjs',
+  'apply-landmark-save-persistence-patch.mjs',
+  'apply-landmark-immediate-save-patch.mjs',
+  'apply-landmark-backend-parse-final-fix.mjs',
+  'apply-landmark-frontend-object-load-fix.mjs',
+  // These used to run from package.json after verification. Keep them inside the
+  // single build pipeline so generated output is deduped and verified last.
+  'apply-landmark-mode-isolated-polygon-fill.mjs',
+  'apply-landmark-mode-visibility-hard-fix.mjs',
+  'apply-landmark-mode-full-isolation-fix.mjs',
+  'apply-landmark-visual-compact-fix.mjs',
+  'apply-landmark-keybindings-and-convex-fill-fix.mjs',
+  'apply-landmark-tools-safe-rewrite.mjs',
+  'apply-landmark-disable-freehand-mode.mjs',
+  'apply-landmark-large-zoom-stable-fix.mjs',
+  'apply-landmark-zoom-grow-visual-fix.mjs',
+  'apply-landmark-driven-measurements-fix.mjs',
+  'apply-landmark-measurement-source-isolation-fix.mjs',
+  'apply-landmark-loadlabels-hard-replace.mjs',
+  'apply-landmark-visible-restore-hard-fix.mjs',
+  'apply-landmark-current-export-fix.mjs',
+  'apply-coco-labels-hard-repair.mjs',
+  // Last repair pass before dedupe and verification.
+  'apply-annotator-syntax-repair.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
@@ -58,14 +93,9 @@ console.log('\n=== Spine Annotator build patches ===')
 for (const patch of patches) {
   const path = `scripts/${patch}`
   if (!fs.existsSync(path)) {
-    console.log(`SKIP missing ${path}`)
-    continue
+    throw new Error(`Missing build patch: ${path}`)
   }
   console.log(`\n--- ${patch} ---`)
-  const result = spawnSync(process.execPath, [path], { stdio: 'inherit', shell: false })
-  if (result.status !== 0) {
-    console.error(`\nBuild patch failed: ${patch}`)
-    process.exit(result.status ?? 1)
-  }
+  await import(`./${patch}`)
 }
-console.log('\n=== Build patches complete ===\n')
+console.log('\n=== Build patches complete ===')

@@ -1,71 +1,54 @@
 /* ================================================================
    서버 API 클라이언트
-   - 인증 토큰 헤더 자동 첨부
+   - sagittal-measurements preview: 인증 비활성화
    - LocalStorage 폴백 (네트워크 실패 시)
    ================================================================ */
 
 const TOKEN_KEY = 'spine-annotator:authToken'
 const CACHE_PREFIX = 'spine-annotator-cache:'
+const PUBLIC_TOKEN = 'public-access'
 
 // ----------------------------------------------------------------
-// 인증 토큰 관리
+// 인증 토큰 관리 - 이 브랜치에서는 로그인 없이 통과
 // ----------------------------------------------------------------
 export function getAuthToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY) || ''
-  } catch {
-    return ''
-  }
+  return PUBLIC_TOKEN
 }
 
 export function setAuthToken(token) {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token)
-    else localStorage.removeItem(TOKEN_KEY)
+    localStorage.setItem(TOKEN_KEY, token || PUBLIC_TOKEN)
   } catch (e) {
     console.warn('Token save failed:', e)
   }
 }
 
 export function hasAuthToken() {
-  return !!getAuthToken()
+  return true
 }
 
 // ----------------------------------------------------------------
-// 비밀번호 검증
+// 비밀번호 검증 - 로그인 제거: 항상 성공
 // ----------------------------------------------------------------
-export async function verifyPassword(password) {
-  const res = await fetch('/api/auth/check', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error(data.error || '비밀번호가 틀렸습니다')
-  }
-  const data = await res.json()
-  if (data.token) setAuthToken(data.token)
-  return data
+export async function verifyPassword(_password) {
+  setAuthToken(PUBLIC_TOKEN)
+  return { ok: true, token: PUBLIC_TOKEN, auth_disabled: true }
 }
 
 // ----------------------------------------------------------------
-// 공통 fetch 래퍼 - 토큰 자동 첨부 + 401 처리
+// 공통 fetch 래퍼
 // ----------------------------------------------------------------
 async function apiFetch(path, opts = {}) {
-  const token = getAuthToken()
   const headers = {
     'Content-Type': 'application/json',
     ...(opts.headers || {}),
   }
-  if (token) headers['X-Auth-Token'] = token
+  headers['X-Auth-Token'] = PUBLIC_TOKEN
 
   const res = await fetch(path, { ...opts, headers })
 
   if (res.status === 401) {
-    // 인증 실패 → 토큰 삭제하고 에러
-    setAuthToken('')
-    const err = new Error('인증이 필요합니다. 비밀번호를 다시 입력해주세요.')
+    const err = new Error('인증이 비활성화된 브랜치인데 서버가 401을 반환했습니다. 최신 preview 배포인지 확인해주세요.')
     err.status = 401
     throw err
   }
@@ -74,7 +57,7 @@ async function apiFetch(path, opts = {}) {
     let msg = `서버 오류 (${res.status})`
     try {
       const data = await res.json()
-      msg = data.error || msg
+      msg = data.error || data.message || msg
     } catch {}
     const err = new Error(msg)
     err.status = res.status
@@ -169,6 +152,24 @@ export async function deleteLabel(filename) {
   return apiFetch(`/api/labels/${encodeURIComponent(filename)}`, { method: 'DELETE' })
 }
 
+/** 파일별 메모 로드 */
+export async function loadNote(filename) {
+  return apiFetch('/api/notes/' + encodeURIComponent(filename))
+}
+
+/** 파일별 메모 저장 */
+export async function saveNote(filename, payload) {
+  return apiFetch('/api/notes/' + encodeURIComponent(filename), {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 전체 메모 별도 내보내기 */
+export async function exportNotes() {
+  return apiFetch('/api/notes/export')
+}
+
 /**
  * 일괄 내보내기
  * @param {Object} filters - {format, view, labeler, min_polygons}
@@ -231,17 +232,11 @@ export async function clearPresence(labelerId) {
 export function clearPresenceBeacon(labelerId) {
   if (!labelerId) return
   try {
-    const blob = new Blob(
-      [JSON.stringify({ labeler_id: labelerId, _method: 'DELETE' })],
-      { type: 'application/json' }
-    )
-    // sendBeacon은 헤더를 못 붙이므로 별도 엔드포인트 만들기보다 그냥 fetch keepalive 사용
-    const token = getAuthToken()
     fetch('/api/presence', {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'X-Auth-Token': token } : {}),
+        'X-Auth-Token': PUBLIC_TOKEN,
       },
       body: JSON.stringify({ labeler_id: labelerId }),
       keepalive: true,
