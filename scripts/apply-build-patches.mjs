@@ -81,6 +81,8 @@ const patches = [
   'apply-landmark-visible-restore-hard-fix.mjs',
   'apply-landmark-current-export-fix.mjs',
   'apply-coco-labels-hard-repair.mjs',
+  // Last repair pass before dedupe and verification.
+  'apply-annotator-syntax-repair.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
