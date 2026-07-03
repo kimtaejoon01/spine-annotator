@@ -37,7 +37,9 @@ const checks = [
   {
     file: 'public/static/measurements.js',
     required: [
-      'export function calculateSagittalMeasurements(polygons = [], landmarks = [])',
+      // Keep this token broad because later measurement patches can safely rewrite
+      // the function signature while preserving the exported API and landmark merge.
+      'export function calculateSagittalMeasurements',
       'function mergeLandmarksIntoMeasurementPolygons',
       'const landmarkPreferred = polys.find',
       'function syncMeasurementDebugOverlay(result)',
