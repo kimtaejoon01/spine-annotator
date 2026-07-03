@@ -13,59 +13,18 @@ type Bindings = {
 
 const api = new Hono<{ Bindings: Bindings }>()
 
-// 운영 비밀번호는 반드시 Cloudflare Pages secret(AUTH_PASSWORD) 또는 로컬 .dev.vars로 주입합니다.
-// Cloudflare secret 입력 중 앞뒤 공백/줄바꿈이 섞여도 로그인 실패하지 않도록 trim해서 비교합니다.
-function getAuthPassword(c: any) {
-  const env = c.env || {}
-  const values = [env.AUTH_PASSWORD, env.SPINE_AUTH_PASSWORD, env.APP_PASSWORD]
-  for (const value of values) {
-    if (typeof value !== 'string') continue
-    const trimmed = value.trim().replace(/^['"]|['"]$/g, '').trim()
-    if (trimmed) return trimmed
-  }
-  return ''
-}
-
 // ----------------------------------------------------------------
-// 인증 미들웨어
+// 인증 비활성화 - sagittal-measurements preview 전용
 // ----------------------------------------------------------------
-api.use('*', async (c, next) => {
-  // /api/auth/check 는 인증 없이 호출 가능 (비밀번호 검증 자체용)
-  if (c.req.path === '/api/auth/check') {
-    return next()
-  }
-
-  const expected = getAuthPassword(c)
-  if (!expected) {
-    return c.json({ error: 'server_misconfigured', message: 'AUTH_PASSWORD가 설정되지 않았습니다' }, 500)
-  }
-  const header = c.req.header('X-Auth-Token') || ''
-  const bearer = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') || ''
-  const token = (header || bearer).trim()
-
-  if (!token || token !== expected) {
-    return c.json({ error: 'unauthorized', message: '인증이 필요합니다' }, 401)
-  }
+api.use('*', async (_c, next) => {
   return next()
 })
 
 // ----------------------------------------------------------------
-// POST /api/auth/check - 비밀번호 검증
+// POST /api/auth/check - 로그인 제거: 항상 성공
 // ----------------------------------------------------------------
 api.post('/auth/check', async (c) => {
-  const expected = getAuthPassword(c)
-  if (!expected) {
-    return c.json({ ok: false, error: 'AUTH_PASSWORD가 설정되지 않았습니다' }, 500)
-  }
-  let body: any = {}
-  try {
-    body = await c.req.json()
-  } catch {}
-  const password = String(body?.password || '').trim()
-  if (password === expected) {
-    return c.json({ ok: true, token: password })
-  }
-  return c.json({ ok: false, error: '비밀번호가 틀렸습니다' }, 401)
+  return c.json({ ok: true, token: 'public-access', auth_disabled: true })
 })
 
 // ----------------------------------------------------------------
