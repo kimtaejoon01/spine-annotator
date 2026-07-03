@@ -2,7 +2,7 @@
    COCO JSON Export
    ================================================================ */
 
-import { LABELS, getSupercategory } from './labels.js'
+import { ALL_LABELS, getSupercategory } from './labels.js'
 
 /**
  * 폴리곤 데이터를 COCO 형식으로 변환
@@ -14,13 +14,13 @@ import { LABELS, getSupercategory } from './labels.js'
  * @param {Array} params.polygons - [{ id, label, points: [x1,y1,x2,y2,...] }]
  * @returns {Object} COCO format JSON
  */
-export function exportToCOCO({ filename, width, height, polygons }) {
+export function exportToCOCO({ filename, width, height, polygons, landmarks = [] }) {
   // categories: 사용하는 라벨만 포함
   const usedLabels = new Set(polygons.map(p => p.label).filter(Boolean))
-  const categories = LABELS
+  const categories = ALL_LABELS
     .filter(lbl => usedLabels.has(lbl))
     .map((lbl, idx) => ({
-      id: LABELS.indexOf(lbl) + 1, // 1-based: C1=1, C2=2, ..., S1=25
+      id: ALL_LABELS.indexOf(lbl) + 1, // 1-based: C1=1, C2=2, ..., S1=25
       name: lbl,
       supercategory: getSupercategory(lbl),
     }))
@@ -32,7 +32,7 @@ export function exportToCOCO({ filename, width, height, polygons }) {
       const pts = poly.points
       const bbox = computeBBox(pts)
       const area = computePolygonArea(pts)
-      const categoryId = LABELS.indexOf(poly.label) + 1
+      const categoryId = ALL_LABELS.indexOf(poly.label) + 1
       return {
         id: idx + 1,
         image_id: 1,
@@ -62,6 +62,16 @@ export function exportToCOCO({ filename, width, height, polygons }) {
     ],
     categories,
     annotations,
+    landmarks: (Array.isArray(landmarks) ? landmarks : []).map(lm => ({
+      id: lm.id,
+      label: lm.label,
+      target: lm.target,
+      kind: lm.kind || 'point',
+      x: Math.round(Number(lm.x) * 100) / 100,
+      y: Math.round(Number(lm.y) * 100) / 100,
+      visibility: lm.visibility || 'visible',
+      order_version: lm.order_version || null,
+    })),
   }
 
   return coco

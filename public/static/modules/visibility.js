@@ -34,10 +34,20 @@ export function applyVisibilityState(annotator, state) {
 
   if (typeof annotator.setHumanLabelVisible === 'function') {
     annotator.setHumanLabelVisible(state.humanLabelVisible !== false)
+  } else {
+    annotator.humanLabelVisible = state.humanLabelVisible !== false
   }
 
   if (typeof annotator.setLabelOverlayVisible === 'function') {
     annotator.setLabelOverlayVisible(state.lineNameVisible !== false)
+  } else {
+    annotator.labelOverlayVisible = state.lineNameVisible !== false
+  }
+
+  annotator.renderPolygons?.()
+  if (annotator.polyLayer) {
+    annotator.polyLayer.visible(state.humanLabelVisible !== false)
+    annotator.polyLayer.batchDraw?.()
   }
 }
 

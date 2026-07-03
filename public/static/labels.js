@@ -14,17 +14,37 @@ export const LABELS = [
   'S1',
 ]
 
+// 추가 골반/고관절 라벨: 자동 척추 라벨링 순서에는 포함하지 않음
+export const EXTRA_LABELS = ['FH_L', 'FH_R', 'HC_L', 'HC_R', 'FH_LAT', 'HC_LAT']
+export const ALL_LABELS = [...LABELS, ...EXTRA_LABELS]
+
 // 척추 영역별 색상
 const COLOR_CERVICAL = '#f87171' // 빨강
 const COLOR_THORACIC = '#fbbf24' // 노랑
 const COLOR_LUMBAR = '#60a5fa'   // 파랑
 const COLOR_SACRAL = '#c084fc'   // 보라
+const COLOR_FEMORAL_HEAD = '#34d399'
+const COLOR_HIP_CENTER = '#fb7185'
 
 /**
  * 라벨 이름으로 색상 반환
  */
+export function isSpineLabel(label) {
+  return LABELS.includes(label)
+}
+
+export function isExtraLabel(label) {
+  return EXTRA_LABELS.includes(label)
+}
+
+export function isPelvisPointLabel(label) {
+  return label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT'
+}
+
 export function getRegionColor(label) {
   if (!label) return '#888888'
+  if (label === 'FH_L' || label === 'FH_R' || label === 'FH_LAT') return COLOR_FEMORAL_HEAD
+  if (label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT') return COLOR_HIP_CENTER
   const c = label[0]
   if (c === 'C') return COLOR_CERVICAL
   if (c === 'T') return COLOR_THORACIC
@@ -43,6 +63,8 @@ export function getSupercategory(label) {
   if (c === 'T') return 'thoracic'
   if (c === 'L') return 'lumbar'
   if (c === 'S') return 'sacrum'
+  if (label === 'FH_L' || label === 'FH_R' || label === 'FH_LAT') return 'femoral_head'
+  if (label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT') return 'hip_center'
   return 'unknown'
 }
 

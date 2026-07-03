@@ -19,6 +19,75 @@ app.get('/', (c) => {
   return c.redirect('/annotate')
 })
 
+
+// AI 추론 결과 전용 비교 페이지
+app.get('/ai-review', (c) => {
+  return c.render(
+    <div id="ai-review-root" class="ai-review-root">
+      <header class="app-header ai-review-header">
+        <div class="header-left">
+          <span class="app-title"><i class="fas fa-robot"></i> AI 결과 비교</span>
+          <span class="file-info"><span id="reviewFileName">이미지 폴더를 연결하세요</span></span>
+        </div>
+        <div class="header-right">
+          <button class="btn-secondary" id="reviewConnectImages"><i class="fas fa-folder-open"></i> 원본 이미지 폴더</button>
+          <button class="btn-secondary" id="reviewAddAiFolder"><i class="fas fa-layer-group"></i> AI 폴더 추가</button>
+          <button class="btn-secondary" id="reviewAddAiParent"><i class="fas fa-sitemap"></i> 상위 폴더 일괄 추가</button>
+          <button class="btn-secondary" id="reviewRefresh"><i class="fas fa-sync"></i> 새로고침</button>
+          <button class="btn-secondary" id="reviewClearAi"><i class="fas fa-times"></i> AI 폴더 초기화</button>
+          <a class="btn-secondary" href="/annotate"><i class="fas fa-edit"></i> 라벨링으로</a>
+        </div>
+      </header>
+
+      <div class="ai-review-layout">
+        <aside class="ai-review-sidebar">
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-images"></i> 원본 이미지 <span class="label-count" id="reviewImageCount">0</span></h3>
+            <div id="reviewImageStatus" class="folder-status"><span class="folder-status-empty"><i class="fas fa-info-circle"></i> 원본 폴더 없음</span></div>
+            <input id="reviewSearch" class="select-input file-search" placeholder="파일명 검색..." />
+            <ul id="reviewImageList" class="file-list"></ul>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-layer-group"></i> AI 결과 폴더 <span class="label-count" id="reviewAiCount">0</span></h3>
+            <div id="reviewAiFolderList" class="ai-review-folder-list"><p class="empty-state">AI 결과 폴더를 여러 개 추가할 수 있습니다.</p></div>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-sliders-h"></i> 보기 설정</h3>
+            <label class="control-label">AI 투명도 <span id="reviewOpacityValue">45</span>%</label>
+            <input id="reviewOpacity" type="range" min="0" max="100" value="45" />
+            <label class="control-label">카드 열 수</label>
+            <select id="reviewColumns" class="select-input">
+              <option value="2" selected>2열</option>
+              <option value="3">3열</option>
+              <option value="4">4열</option>
+            </select>
+            <p class="note-hint">휠 줌/드래그 팬은 라벨링 화면과 같은 방식으로 모든 비교 카드에 동시에 적용됩니다.</p>
+          </div>
+        </aside>
+
+        <main class="ai-review-main">
+          <div class="ai-review-toolbar">
+            <button class="btn-secondary" id="reviewPrev"><i class="fas fa-chevron-left"></i> 이전</button>
+            <button class="btn-secondary" id="reviewFit"><i class="fas fa-compress-arrows-alt"></i> 맞춤</button>
+            <span id="reviewZoomLabel" class="zoom-level">100%</span>
+            <button class="btn-secondary" id="reviewNext">다음 <i class="fas fa-chevron-right"></i></button>
+            <span id="reviewMatchSummary" class="ai-review-summary">-</span>
+          </div>
+          <div id="reviewStage" class="ai-review-stage">
+            <div id="reviewGrid" class="ai-review-grid cols-2">
+              <div class="ai-review-empty">
+                <i class="fas fa-folder-open fa-3x"></i>
+                <p>원본 이미지 폴더와 AI 결과 폴더를 연결하세요.</p>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+      <script type="module" src="/static/ai-review.js"></script>
+    </div>
+  )
+})
+
 // 라벨링 화면 (Phase 1 프로토타입)
 app.get('/annotate', (c) => {
   return c.render(
@@ -286,6 +355,55 @@ app.get('/annotate', (c) => {
             <span class="sidebar-title">라벨</span>
           </div>
           <div class="sidebar-scroll">
+          <div class="panel">
+            <h3 class="panel-title">
+              <i class="fas fa-layer-group"></i> 보기 / AI 결과
+            </h3>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="toggleLabelOverlay" checked />
+                <span>사람 라벨 보기</span>
+              </label>
+            </div>
+            <button class="btn-secondary btn-full" id="originalOnlyBtn" title="원본 이미지만 보기. H를 누르고 있는 동안에도 사람 라벨이 숨겨집니다.">
+              <i class="fas fa-eye-slash"></i> 원본만 보기
+            </button>
+            <div class="ai-panel-divider"></div>
+            <div class="ai-folder-row">
+              <button class="btn-secondary btn-full" id="connectAiFolderBtn" title="표준화된 AI mask PNG 폴더 연결">
+                <i class="fas fa-robot"></i> AI 폴더 연결
+              </button>
+              <button class="btn-icon" id="refreshAiFolderBtn" title="AI 폴더 다시 스캔">
+                <i class="fas fa-sync"></i>
+              </button>
+            </div>
+            <div id="aiFolderStatus" class="ai-folder-status empty">AI mask 폴더가 연결되지 않았습니다</div>
+            <div class="control-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="toggleAiOverlay" checked />
+                <span>AI 결과 보기</span>
+              </label>
+            </div>
+            <div class="control-group">
+              <label>
+                AI 투명도 <span id="aiOpacityValue">45</span>
+              </label>
+              <input type="range" id="aiOpacity" min="0" max="100" value="45" step="1" />
+            </div>
+            <div id="aiRegionControls" class="ai-region-controls"></div>
+            <p class="panel-desc" style="margin-top:8px">
+              파일명 규칙: 원본_AIresult_부위_모델_v0.png
+            </p>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title">
+              <i class="fas fa-eye"></i> 표시
+            </h3>
+            <label class="checkbox-label" title="라벨링 마스크는 그대로 두고 선과 C2/C3 이름표만 숨깁니다. 저장 라벨은 변경하지 않습니다">
+              <input type="checkbox" id="humanLabelOverlayToggle" checked />
+              <span>선/이름표 보기</span>
+            </label>
+          </div>
           <div class="panel panel-full">
             <h3 class="panel-title">
               <i class="fas fa-list"></i> 라벨 목록
@@ -294,6 +412,19 @@ app.get('/annotate', (c) => {
             <div class="label-list" id="labelList">
               <p class="empty-state">폴리곤을 그려서 라벨을 추가하세요</p>
             </div>
+          </div>
+          <div class="panel" id="notePanel">
+            <h3 class="panel-title">
+              <i class="fas fa-sticky-note"></i> 파일 메모
+            </h3>
+            <textarea id="fileNoteInput" class="note-textarea" placeholder="이 이미지에 대한 메모를 적으세요. 예: AI mask 밀림, 판독 주의점, 나중에 재확인 등"></textarea>
+            <div class="note-footer">
+              <span id="noteStatus" class="note-status">메모 없음</span>
+              <button class="btn-secondary btn-small" id="exportNotesBtn" title="메모만 별도 JSON으로 내보내기">
+                <i class="fas fa-download"></i> 메모 내보내기
+              </button>
+            </div>
+            <p class="note-hint">메모는 COCO/라벨 JSON에 포함되지 않고 별도로 저장됩니다.</p>
           </div>
           <div class="panel">
             <h3 class="panel-title">
