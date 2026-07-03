@@ -64,6 +64,23 @@ const patches = [
   'apply-landmark-immediate-save-patch.mjs',
   'apply-landmark-backend-parse-final-fix.mjs',
   'apply-landmark-frontend-object-load-fix.mjs',
+  // These used to run from package.json after verification. Keep them inside the
+  // single build pipeline so generated output is deduped and verified last.
+  'apply-landmark-mode-isolated-polygon-fill.mjs',
+  'apply-landmark-mode-visibility-hard-fix.mjs',
+  'apply-landmark-mode-full-isolation-fix.mjs',
+  'apply-landmark-visual-compact-fix.mjs',
+  'apply-landmark-keybindings-and-convex-fill-fix.mjs',
+  'apply-landmark-tools-safe-rewrite.mjs',
+  'apply-landmark-disable-freehand-mode.mjs',
+  'apply-landmark-large-zoom-stable-fix.mjs',
+  'apply-landmark-zoom-grow-visual-fix.mjs',
+  'apply-landmark-driven-measurements-fix.mjs',
+  'apply-landmark-measurement-source-isolation-fix.mjs',
+  'apply-landmark-loadlabels-hard-replace.mjs',
+  'apply-landmark-visible-restore-hard-fix.mjs',
+  'apply-landmark-current-export-fix.mjs',
+  'apply-coco-labels-hard-repair.mjs',
   // Must run near the end: older build patches can insert duplicate helper functions.
   'apply-generated-js-dedupe.mjs',
   // Must run last: fail the build if critical runtime guards are missing.
