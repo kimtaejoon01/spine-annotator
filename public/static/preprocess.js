@@ -35,8 +35,8 @@ export function presetById(id) {
   return PRESETS.find(p => p.id === id) || PRESETS[0]
 }
 
-export function needsOpenCV(steps) {
-  return steps.some(s => s === 'clahe' || s === 'canny')
+export function needsOpenCV(_steps) {
+  return false // 모든 연산을 순수 JS로 구현 → opencv.js 불필요
 }
 
 // ================================================================
@@ -187,69 +187,101 @@ export function opAniso(gray, w, h, { iterations = 10, kappa = 50, lambda = 0.1 
 }
 
 // ================================================================
-// opencv.js 지연 로딩 (CLAHE / Canny 용)
+// CLAHE (순수 JS) — 타일별 히스토그램 평활화 + clip + 이중선형 보간
 // ================================================================
-let _cvPromise = null
-// 우선순위: (1) 자가호스팅(있으면) → (2) jsDelivr → (3) 공식 docs.opencv.org
-// 네트워크에서 특정 CDN이 막혀도 나머지로 시도. 병원/사내망이면 아래 '자가호스팅'을 권장.
-const OPENCV_URLS = [
-  '/static/opencv.js',
-  'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js',
-  'https://docs.opencv.org/4.10.0/opencv.js',
-]
-
-function loadScriptAsCv(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = url
-    script.async = true
-    let settled = false
-    const done = (cv) => { if (!settled) { settled = true; resolve(cv) } }
-    const fail = (e) => { if (!settled) { settled = true; script.remove(); reject(e) } }
-    script.onload = () => {
-      const cv = window.cv
-      if (cv && cv.Mat) return done(cv)
-      if (cv && typeof cv.then === 'function') { cv.then(done, fail); return }   // Promise형 빌드
-      if (cv) { cv.onRuntimeInitialized = () => done(window.cv); return }         // emscripten 비동기 init
-      fail(new Error('opencv 전역(cv) 없음'))
+export function opClahe(gray, w, h, { clip = 2.0, tile = 8 } = {}) {
+  const tilesX = Math.max(1, Math.round(tile))
+  const tilesY = tilesX
+  const tw = Math.ceil(w / tilesX)
+  const th = Math.ceil(h / tilesY)
+  const maps = new Array(tilesX * tilesY)
+  const clipLimit = Math.max(1, (clip * tw * th) / 256)
+  for (let tyi = 0; tyi < tilesY; tyi++) {
+    for (let txi = 0; txi < tilesX; txi++) {
+      const x0 = txi * tw, y0 = tyi * th
+      const x1 = Math.min(w, x0 + tw), y1 = Math.min(h, y0 + th)
+      const hist = new Float32Array(256)
+      let count = 0
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { hist[gray[y * w + x]]++; count++ }
+      let excess = 0
+      for (let i = 0; i < 256; i++) if (hist[i] > clipLimit) { excess += hist[i] - clipLimit; hist[i] = clipLimit }
+      const inc = excess / 256
+      const map = new Uint8Array(256)
+      let cdf = 0
+      const scale = 255 / (count || 1)
+      for (let i = 0; i < 256; i++) { cdf += hist[i] + inc; map[i] = Math.min(255, Math.round(cdf * scale)) }
+      maps[tyi * tilesX + txi] = map
     }
-    script.onerror = () => fail(new Error('네트워크 로드 실패: ' + url))
-    document.head.appendChild(script)
-  })
-}
-
-export function loadOpenCV() {
-  if (typeof window !== 'undefined' && window.cv && window.cv.Mat) return Promise.resolve(window.cv)
-  if (_cvPromise) return _cvPromise
-  _cvPromise = (async () => {
-    let lastErr
-    for (const url of OPENCV_URLS) {
-      try { return await loadScriptAsCv(url) }
-      catch (e) { lastErr = e; /* 다음 URL 시도 */ }
+  }
+  const out = new Uint8ClampedArray(gray.length)
+  const clampT = (v, m) => v < 0 ? 0 : v > m ? m : v
+  for (let y = 0; y < h; y++) {
+    const gy = (y - th / 2) / th
+    const ty0 = Math.floor(gy), fy = gy - ty0
+    const ty0c = clampT(ty0, tilesY - 1), ty1c = clampT(ty0 + 1, tilesY - 1)
+    for (let x = 0; x < w; x++) {
+      const gx = (x - tw / 2) / tw
+      const tx0 = Math.floor(gx), fx = gx - tx0
+      const tx0c = clampT(tx0, tilesX - 1), tx1c = clampT(tx0 + 1, tilesX - 1)
+      const v = gray[y * w + x]
+      const m00 = maps[ty0c * tilesX + tx0c][v]
+      const m01 = maps[ty0c * tilesX + tx1c][v]
+      const m10 = maps[ty1c * tilesX + tx0c][v]
+      const m11 = maps[ty1c * tilesX + tx1c][v]
+      const top = m00 * (1 - fx) + m01 * fx
+      const bot = m10 * (1 - fx) + m11 * fx
+      out[y * w + x] = top * (1 - fy) + bot * fy
     }
-    _cvPromise = null  // 전부 실패 → 다음에 재시도 가능하도록 캐시 해제
-    throw new Error('opencv.js 로드 실패(모든 소스). 네트워크가 CDN을 막고 있으면 opencv.js를 public/static/opencv.js 로 직접 넣어주세요. ' + (lastErr && lastErr.message || ''))
-  })()
-  return _cvPromise
+  }
+  gray.set(out)
+  return gray
 }
 
-function cvClahe(cv, gray, w, h, { clip = 2.0, tile = 8 } = {}) {
-  const src = cv.matFromArray(h, w, cv.CV_8UC1, gray)
-  const dst = new cv.Mat()
-  const clahe = new cv.CLAHE(clip, new cv.Size(tile, tile))
-  clahe.apply(src, dst)
-  const out = new Uint8ClampedArray(dst.data)
-  src.delete(); dst.delete(); clahe.delete()
-  return out
-}
-
-function cvCanny(cv, gray, w, h, { low = 50, high = 150 } = {}) {
-  const src = cv.matFromArray(h, w, cv.CV_8UC1, gray)
-  const dst = new cv.Mat()
-  cv.Canny(src, dst, low, high)
-  const out = new Uint8ClampedArray(dst.data)
-  src.delete(); dst.delete()
-  return out
+// ================================================================
+// Canny 경계 (순수 JS) — blur → Sobel → 비최대억제 → 이중임계 + 히스테리시스
+// ================================================================
+export function opCanny(gray, w, h, { low = 50, high = 150 } = {}) {
+  const blur = boxBlurGray(gray, w, h, 1)
+  const mag = new Float32Array(w * h)
+  const dir = new Float32Array(w * h)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      const gx = -blur[i - w - 1] - 2 * blur[i - 1] - blur[i + w - 1] + blur[i - w + 1] + 2 * blur[i + 1] + blur[i + w + 1]
+      const gy = -blur[i - w - 1] - 2 * blur[i - w] - blur[i - w + 1] + blur[i + w - 1] + 2 * blur[i + w] + blur[i + w + 1]
+      mag[i] = Math.hypot(gx, gy)
+      let a = Math.atan2(gy, gx) * 180 / Math.PI
+      if (a < 0) a += 180
+      dir[i] = a
+    }
+  }
+  const nms = new Float32Array(w * h)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, a = dir[i]
+      let p, q
+      if (a < 22.5 || a >= 157.5) { p = mag[i - 1]; q = mag[i + 1] }
+      else if (a < 67.5) { p = mag[i - w + 1]; q = mag[i + w - 1] }
+      else if (a < 112.5) { p = mag[i - w]; q = mag[i + w] }
+      else { p = mag[i - w - 1]; q = mag[i + w + 1] }
+      nms[i] = (mag[i] >= p && mag[i] >= q) ? mag[i] : 0
+    }
+  }
+  const out = new Uint8ClampedArray(w * h)
+  const STRONG = 255, WEAK = 80
+  for (let i = 0; i < out.length; i++) out[i] = nms[i] >= high ? STRONG : nms[i] >= low ? WEAK : 0
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      if (out[i] !== WEAK) continue
+      let strong = false
+      for (let dy = -1; dy <= 1 && !strong; dy++) for (let dx = -1; dx <= 1; dx++) if (out[(y + dy) * w + (x + dx)] === STRONG) { strong = true; break }
+      out[i] = strong ? STRONG : 0
+    }
+  }
+  for (let i = 0; i < out.length; i++) if (out[i] === WEAK) out[i] = 0
+  gray.set(out)
+  return gray
 }
 
 // ================================================================
@@ -264,27 +296,32 @@ export async function runPipeline(source, steps, params = {}, { maxDim = 1400 } 
   const orderedSteps = STEP_ORDER.filter(s => steps.includes(s))
   if (orderedSteps.length === 0) return null
 
+  // aniso는 반복 연산이라 무거움 → 그 프리셋은 더 작게 처리해 프리즈 방지
+  const effMaxDim = orderedSteps.includes('aniso') ? Math.min(maxDim, 900) : maxDim
+
   const sw = source.naturalWidth || source.width
   const sh = source.naturalHeight || source.height
-  const scale = Math.min(1, maxDim / Math.max(sw, sh))
+  const scale = Math.min(1, effMaxDim / Math.max(sw, sh))
   const w = Math.max(1, Math.round(sw * scale))
   const h = Math.max(1, Math.round(sh * scale))
 
   const work = Object.assign(document.createElement('canvas'), { width: w, height: h })
-  work.getContext('2d').drawImage(source, 0, 0, w, h)
+  work.getContext('2d', { willReadFrequently: true }).drawImage(source, 0, 0, w, h)
 
   let { gray } = toGray(work)
   const P = k => ({ ...DEFAULT_PARAMS[k], ...(params[k] || {}) })
+  const yield_ = () => new Promise(r => setTimeout(r, 0))
 
   for (const step of orderedSteps) {
+    await yield_() // 각 단계 사이에 UI가 숨쉴 틈을 준다 (상태표시 갱신 등)
     switch (step) {
       case 'normalize': opNormalize(gray, P('normalize')); break
       case 'gamma': opGamma(gray, P('gamma')); break
+      case 'clahe': opClahe(gray, w, h, P('clahe')); break
       case 'unsharp': opUnsharp(gray, w, h, P('unsharp')); break
       case 'aniso': opAniso(gray, w, h, P('aniso')); break
+      case 'canny': opCanny(gray, w, h, P('canny')); break
       case 'invert': opInvert(gray); break
-      case 'clahe': { const cv = await loadOpenCV(); gray = cvClahe(cv, gray, w, h, P('clahe')); break }
-      case 'canny': { const cv = await loadOpenCV(); gray = cvCanny(cv, gray, w, h, P('canny')); break }
     }
   }
   return grayToCanvas(gray, w, h)
