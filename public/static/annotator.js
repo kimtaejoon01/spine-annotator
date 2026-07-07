@@ -138,6 +138,7 @@ export class SpineAnnotator {
       imgObj.onload = () => {
         this.imageWidth = imgObj.width
         this.imageHeight = imgObj.height
+        this.baseImageEl = imgObj  // 전처리 뷰의 원본 소스 (원본은 절대 변경 안 함)
 
         // 기존 이미지/AI 오버레이 제거
         this.imageLayer.destroyChildren()
@@ -164,6 +165,9 @@ export class SpineAnnotator {
         this.clearAll(false)
         this.pushHistory()
 
+        // 전처리 뷰 UI에 새 이미지 알림 (현재 뷰 재적용용)
+        try { window.dispatchEvent(new CustomEvent('spine:image-loaded')) } catch (e) {}
+
         resolve()
       }
       imgObj.onerror = (err) => reject(err)
@@ -189,6 +193,24 @@ export class SpineAnnotator {
 
   setImageFilter(opts) {
     this.imageFilters = { ...this.imageFilters, ...opts }
+    this.applyImageFilters()
+  }
+
+  // ============================================================
+  // 전처리 뷰 (표시 전용) — 처리된 캔버스를 이미지 노드에 얹는다.
+  // 노드 크기는 원본 그대로라 폴리곤 좌표계는 보존된다.
+  // canvasOrNull === null 이면 원본으로 되돌린다.
+  // ============================================================
+  getBaseImageEl() {
+    return this.baseImageEl || null
+  }
+
+  applyPreprocessCanvas(canvasOrNull) {
+    if (!this.imageNode) return
+    const src = canvasOrNull || this.baseImageEl
+    if (!src) return
+    this.imageNode.image(src)
+    // brightness/contrast/invert 필터 재적용 + cache + redraw
     this.applyImageFilters()
   }
 
