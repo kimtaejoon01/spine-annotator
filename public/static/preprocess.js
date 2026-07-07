@@ -190,26 +190,46 @@ export function opAniso(gray, w, h, { iterations = 10, kappa = 50, lambda = 0.1 
 // opencv.js 지연 로딩 (CLAHE / Canny 용)
 // ================================================================
 let _cvPromise = null
-const OPENCV_URL = 'https://docs.opencv.org/4.10.0/opencv.js'
+// 우선순위: (1) 자가호스팅(있으면) → (2) jsDelivr → (3) 공식 docs.opencv.org
+// 네트워크에서 특정 CDN이 막혀도 나머지로 시도. 병원/사내망이면 아래 '자가호스팅'을 권장.
+const OPENCV_URLS = [
+  '/static/opencv.js',
+  'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js',
+  'https://docs.opencv.org/4.10.0/opencv.js',
+]
+
+function loadScriptAsCv(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = url
+    script.async = true
+    let settled = false
+    const done = (cv) => { if (!settled) { settled = true; resolve(cv) } }
+    const fail = (e) => { if (!settled) { settled = true; script.remove(); reject(e) } }
+    script.onload = () => {
+      const cv = window.cv
+      if (cv && cv.Mat) return done(cv)
+      if (cv && typeof cv.then === 'function') { cv.then(done, fail); return }   // Promise형 빌드
+      if (cv) { cv.onRuntimeInitialized = () => done(window.cv); return }         // emscripten 비동기 init
+      fail(new Error('opencv 전역(cv) 없음'))
+    }
+    script.onerror = () => fail(new Error('네트워크 로드 실패: ' + url))
+    document.head.appendChild(script)
+  })
+}
 
 export function loadOpenCV() {
   if (typeof window !== 'undefined' && window.cv && window.cv.Mat) return Promise.resolve(window.cv)
   if (_cvPromise) return _cvPromise
-  _cvPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = OPENCV_URL
-    script.async = true
-    script.onload = () => {
-      const cv = window.cv
-      if (cv && cv.Mat) return resolve(cv)
-      // WASM 초기화가 비동기인 빌드 대응
-      if (cv && typeof cv.then === 'function') { cv.then(resolve); return }
-      if (cv) { cv.onRuntimeInitialized = () => resolve(window.cv); return }
-      reject(new Error('opencv.js 로드 실패'))
+  _cvPromise = (async () => {
+    let lastErr
+    for (const url of OPENCV_URLS) {
+      try { return await loadScriptAsCv(url) }
+      catch (e) { lastErr = e; /* 다음 URL 시도 */ }
     }
-    script.onerror = () => reject(new Error('opencv.js 네트워크 로드 실패'))
-    document.head.appendChild(script)
-  })
+    _cvPromise = null  // 전부 실패 → 다음에 재시도 가능하도록 캐시 해제
+    throw new Error('opencv.js 로드 실패(모든 소스). 네트워크가 CDN을 막고 있으면 opencv.js를 public/static/opencv.js 로 직접 넣어주세요. ' + (lastErr && lastErr.message || ''))
+  })()
   return _cvPromise
 }
 
