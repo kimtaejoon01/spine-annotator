@@ -24,6 +24,39 @@ function getAuthPassword(c: any) {
 }
 
 // ----------------------------------------------------------------
+// 입력 검증: 폴리곤 배열을 안전한 형태로 정규화
+//  - 개수 / 점 개수 상한, 좌표는 유한한 숫자만 허용, label은 문자열로 강제
+//  - 문제가 있으면 { error } 를 반환하고 호출측에서 클라이언트에 메시지를 전달
+// ----------------------------------------------------------------
+const MAX_POLYGONS = 200          // 이미지당 폴리곤 상한 (척추 25 + 골반 등 여유)
+const MAX_POINTS_PER_POLY = 2000  // 폴리곤 1개의 (x,y) 점 상한
+const MAX_LABEL_LEN = 40
+
+function sanitizePolygons(raw: any): { polygons?: any[]; error?: string } {
+  if (!Array.isArray(raw)) return { error: 'polygons must be an array' }
+  if (raw.length > MAX_POLYGONS) return { error: `too many polygons (max ${MAX_POLYGONS})` }
+  const out: any[] = []
+  for (let i = 0; i < raw.length; i++) {
+    const poly = raw[i]
+    if (!poly || typeof poly !== 'object') return { error: `polygon[${i}] is not an object` }
+    const pts = poly.points
+    if (!Array.isArray(pts)) return { error: `polygon[${i}].points must be an array` }
+    if (pts.length % 2 !== 0) return { error: `polygon[${i}].points length must be even` }
+    if (pts.length < 6) return { error: `polygon[${i}] needs at least 3 points` }
+    if (pts.length > MAX_POINTS_PER_POLY * 2) return { error: `polygon[${i}] has too many points (max ${MAX_POINTS_PER_POLY})` }
+    const cleanPts: number[] = []
+    for (const v of pts) {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return { error: `polygon[${i}] has a non-numeric coordinate` }
+      cleanPts.push(n)
+    }
+    // 알 수 없는 부가 필드는 보존하되(프론트 메타데이터 호환), 핵심 필드만 정규화
+    out.push({ ...poly, points: cleanPts, label: poly.label == null ? '' : String(poly.label).slice(0, MAX_LABEL_LEN) })
+  }
+  return { polygons: out }
+}
+
+// ----------------------------------------------------------------
 // 인증 미들웨어
 // ----------------------------------------------------------------
 api.use('*', async (c, next) => {
@@ -134,7 +167,11 @@ api.put('/labels/:filename', async (c) => {
     return c.json({ ok: false, error: 'invalid json' }, 400)
   }
 
-  const polygons = Array.isArray(body.polygons) ? body.polygons : []
+  const sanitized = sanitizePolygons(Array.isArray(body.polygons) ? body.polygons : [])
+  if (sanitized.error) {
+    return c.json({ ok: false, error: sanitized.error }, 400)
+  }
+  const polygons = sanitized.polygons!
   const polygonsJson = JSON.stringify(polygons)
   const now = new Date().toISOString()
   const viewType = body.view_type || null
@@ -243,6 +280,57 @@ api.delete('/labels/:filename', async (c) => {
 })
 
 // ----------------------------------------------------------------
+// File notes / memo API - COCO 라벨과 분리 저장
+// ----------------------------------------------------------------
+async function ensureNotesTable(c: any) {
+  await c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS notes (filename TEXT PRIMARY KEY, note_text TEXT NOT NULL DEFAULT '', labeler_id TEXT, updated_at TEXT NOT NULL, created_at TEXT NOT NULL)`).run()
+  await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC)').run()
+  await c.env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_notes_labeler ON notes(labeler_id)').run()
+}
+
+api.get('/notes/export', async (c) => {
+  try {
+    await ensureNotesTable(c)
+    const result = await c.env.DB.prepare(`SELECT filename, note_text, labeler_id, updated_at, created_at FROM notes WHERE note_text <> '' ORDER BY filename`).all<any>()
+    return c.json({ ok: true, exported_at: new Date().toISOString(), items: result.results || [] })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+api.get('/notes/:filename', async (c) => {
+  const filename = decodeURIComponent(c.req.param('filename'))
+  try {
+    await ensureNotesTable(c)
+    const row = await c.env.DB.prepare('SELECT filename, note_text, labeler_id, updated_at, created_at FROM notes WHERE filename = ?').bind(filename).first<any>()
+    if (!row) return c.json({ ok: true, exists: false, filename, note_text: '' })
+    return c.json({ ok: true, exists: true, ...row })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+api.put('/notes/:filename', async (c) => {
+  const filename = decodeURIComponent(c.req.param('filename'))
+  let body: any = {}
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid json' }, 400) }
+  const noteText = String(body?.note_text ?? '').slice(0, 20000)
+  const labelerId = body?.labeler_id || null
+  const now = new Date().toISOString()
+  try {
+    await ensureNotesTable(c)
+    if (noteText.trim() === '') {
+      await c.env.DB.prepare('DELETE FROM notes WHERE filename = ?').bind(filename).run()
+      return c.json({ ok: true, saved: true, deleted: true, filename, note_text: '', updated_at: now })
+    }
+    await c.env.DB.prepare('INSERT INTO notes (filename, note_text, labeler_id, updated_at, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(filename) DO UPDATE SET note_text=excluded.note_text, labeler_id=excluded.labeler_id, updated_at=excluded.updated_at').bind(filename, noteText, labelerId, now, now).run()
+    return c.json({ ok: true, saved: true, filename, note_text: noteText, updated_at: now })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+// ----------------------------------------------------------------
 // GET /api/export - 모든 라벨 내보내기
 // query: format=coco|raw, view=AP|LAT, labeler=park|kim|hwang, min_polygons=25
 // ----------------------------------------------------------------
@@ -285,7 +373,10 @@ api.get('/export', async (c) => {
         const label = poly.label || ''
         const cat = categories.find(c => c.name === label)
         if (!cat) continue
-        const pts = poly.points || []
+        // 과거 데이터 방어: 좌표가 짝수 개의 유한한 숫자가 아니면 스킵 (NaN annotation 방지)
+        const rawPts = Array.isArray(poly.points) ? poly.points : []
+        const pts = rawPts.map(Number)
+        if (pts.length < 6 || pts.length % 2 !== 0 || pts.some((n: number) => !Number.isFinite(n))) continue
         annotations.push({
           id: annId++, image_id: imgId, category_id: cat.id,
           segmentation: [pts], bbox: polygonBbox(pts), area: polygonArea(pts),
@@ -356,7 +447,9 @@ api.post('/migrate', async (c) => {
     try {
       const filename = it.filename
       const data = it.data || {}
-      const polygons = Array.isArray(data.polygons) ? data.polygons : []
+      const sanitized = sanitizePolygons(Array.isArray(data.polygons) ? data.polygons : [])
+      if (sanitized.error) { results.push({ filename: it.filename, ok: false, error: sanitized.error }); continue }
+      const polygons = sanitized.polygons!
       if (!filename || polygons.length === 0) { results.push({ filename, ok: false, reason: 'empty' }); continue }
       const polygonsJson = JSON.stringify(polygons)
       const now = new Date().toISOString()
@@ -383,9 +476,9 @@ api.post('/migrate', async (c) => {
 })
 
 // ----------------------------------------------------------------
-// POST /api/presence - 현재 작업 중인 파일 알림
+// POST/PUT /api/presence - 현재 작업 중인 파일 알림
 // ----------------------------------------------------------------
-api.post('/presence', async (c) => {
+async function handlePresenceUpsert(c: any) {
   let body: any
   try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid json' }, 400) }
   const labelerId = body.labeler_id || ''
@@ -393,23 +486,35 @@ api.post('/presence', async (c) => {
   if (!labelerId) return c.json({ ok: false, error: 'labeler_id required' }, 400)
   const now = new Date().toISOString()
   try {
-    await c.env.DB.prepare(`
-      INSERT INTO presence (labeler_id, filename, last_seen)
-      VALUES (?, ?, ?)
-      ON CONFLICT(labeler_id) DO UPDATE SET filename=excluded.filename, last_seen=excluded.last_seen
-    `).bind(labelerId, filename, now).run()
+    await c.env.DB.prepare(
+      'INSERT INTO presence (labeler_id, filename, last_seen) ' +
+      'VALUES (?, ?, ?) ' +
+      'ON CONFLICT(labeler_id) DO UPDATE SET filename=excluded.filename, last_seen=excluded.last_seen'
+    ).bind(labelerId, filename, now).run()
     return c.json({ ok: true })
   } catch (err: any) { return c.json({ ok: false, error: err.message }, 500) }
-})
+}
 
-api.delete('/presence/:labeler_id', async (c) => {
-  const labelerId = decodeURIComponent(c.req.param('labeler_id'))
+api.post('/presence', handlePresenceUpsert)
+api.put('/presence', handlePresenceUpsert)
+
+async function handlePresenceDelete(c: any) {
+  let labelerId = c.req.param('labeler_id') ? decodeURIComponent(c.req.param('labeler_id')) : ''
+  if (!labelerId) {
+    try {
+      const body = await c.req.json()
+      labelerId = body?.labeler_id || ''
+    } catch {}
+  }
+  if (!labelerId) return c.json({ ok: false, error: 'labeler_id required' }, 400)
   try {
-    await c.env.DB.prepare(`DELETE FROM presence WHERE labeler_id = ?`).bind(labelerId).run()
+    await c.env.DB.prepare('DELETE FROM presence WHERE labeler_id = ?').bind(labelerId).run()
     return c.json({ ok: true })
   } catch (err: any) { return c.json({ ok: false, error: err.message }, 500) }
-})
+}
 
+api.delete('/presence', handlePresenceDelete)
+api.delete('/presence/:labeler_id', handlePresenceDelete)
 // ----------------------------------------------------------------
 // GET /api/sync - 라벨 메타 + presence 한번에 동기화
 // ----------------------------------------------------------------

@@ -3,8 +3,10 @@
    ================================================================ */
 
 import { SpineAnnotator } from './annotator.js'
-import { LABELS, parseFilename, getRegionColor } from './labels.js'
+import { LABELS, ALL_LABELS, parseFilename, getRegionColor } from './labels.js'
 import { exportToCOCO } from './coco.js'
+import { initNotesModule, loadCurrentNote as loadCurrentNoteFromModule } from './modules/notes.js'
+import { initVisibilityControls, refreshVisibilityControls } from './modules/visibility.js'
 import {
   ACTIONS,
   normalizeKey,
@@ -43,6 +45,9 @@ import {
   loadLabel,
   saveLabel,
   deleteLabel,
+  loadNote,
+  saveNote,
+  exportNotes,
   exportAll,
   getStats,
   migrateLegacyLabels,
@@ -64,6 +69,8 @@ let presenceMap = new Map()
 // 폴링 타이머
 let pollTimer = null
 const POLL_INTERVAL_MS = 2000  // 5초 → 2초로 단축
+const LABEL_OVERLAY_VISIBLE_KEY = 'spine-annotator:label-overlay-visible'
+const HUMAN_LABEL_VISIBLE_KEY = 'spine-annotator:human-label-visible'
 
 // 전역 상태
 const state = {
@@ -83,13 +90,113 @@ const state = {
   files: [],                 // [{name, handle}] 정렬된 이미지 파일 목록
   fileFilter: 'all',         // 'all' | 'AP' | 'LAT'
   fileSearch: '',            // 검색어 (lowercase)
-  currentObjectUrl: null,    // 현재 캔버스에 로드된 ObjectURL (해제용)
+  currentObjectUrl: null,    // 현재 캔버스에 로드된 ObjectURL (해제용),
+
+  // 파일별 메모장 (라벨/COCO와 분리)
+  noteLoading: false,
+  noteSaveTimer: null,
+  noteLastSavedAt: null,
+
+  // AI mask 오버레이
+  aiFolderHandle: null,
+  aiFolderName: '',
+  aiFiles: [],
+  aiByBase: new Map(),
+  aiSelectedModel: { cervical: '', thoracic: '', lumbar: '' },
+  aiRegionVisible: { cervical: true, thoracic: true, lumbar: true },
+  aiMaskVisible: false,
+  aiCompareVisible: true,
+  aiCompareRenderToken: 0,
+  aiCompareCache: new Map(),
+  aiCompareZoom: 1,
+  aiComparePanX: 0,
+  aiComparePanY: 0,
+  aiCompareDragging: false,
+  aiOpacity: 45,
+  aiObjectUrls: [],
+  aiLoadToken: 0,
+  humanLabelVisible: loadHumanLabelVisible(),
+  labelOverlayVisible: loadLabelOverlayVisible(),
+  lineNameVisible: true,
+  originalOnly: false,
+}
+
+
+// ================================================================
+// 검수용 표시 토글
+// ================================================================
+function loadHumanLabelVisible() {
+  try {
+    const raw = localStorage.getItem(HUMAN_LABEL_VISIBLE_KEY)
+    return raw == null ? true : raw !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function loadLabelOverlayVisible() {
+  try {
+    const raw = localStorage.getItem(LABEL_OVERLAY_VISIBLE_KEY)
+    return raw == null ? true : raw !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function setHumanLabelVisible(visible) {
+  state.humanLabelVisible = visible !== false
+  try { localStorage.setItem(HUMAN_LABEL_VISIBLE_KEY, String(state.humanLabelVisible)) } catch {}
+  if (state.annotator && typeof state.annotator.setHumanLabelVisible === 'function') {
+    state.annotator.setHumanLabelVisible(state.humanLabelVisible)
+  }
+}
+
+function setLabelOverlayVisible(visible) {
+  state.labelOverlayVisible = visible !== false
+  try { localStorage.setItem(LABEL_OVERLAY_VISIBLE_KEY, String(state.labelOverlayVisible)) } catch {}
+  if (state.annotator && typeof state.annotator.setLabelOverlayVisible === 'function') {
+    state.annotator.setLabelOverlayVisible(state.labelOverlayVisible)
+  }
+}
+
+function bindLabelOverlayToggle() {
+  const human = document.getElementById('toggleLabelOverlay')
+  if (human) {
+    human.checked = state.humanLabelVisible !== false
+    const span = human.closest('label')?.querySelector('span')
+    if (span) span.textContent = '사람 라벨 보기'
+    if (!human.dataset.correctHumanLabelBound) {
+      human.dataset.correctHumanLabelBound = '1'
+      human.addEventListener('change', (e) => {
+        e.stopImmediatePropagation()
+        setHumanLabelVisible(human.checked)
+      }, true)
+    }
+  }
+
+  const lineName = document.getElementById('humanLabelOverlayToggle')
+  if (lineName) {
+    lineName.checked = state.labelOverlayVisible !== false
+    const span = lineName.closest('label')?.querySelector('span')
+    if (span) span.textContent = '선/이름표 보기'
+    if (!lineName.dataset.correctLineNameBound) {
+      lineName.dataset.correctLineNameBound = '1'
+      lineName.addEventListener('change', (e) => {
+        e.stopImmediatePropagation()
+        setLabelOverlayVisible(lineName.checked)
+      }, true)
+    }
+  }
+
+  setHumanLabelVisible(state.humanLabelVisible !== false)
+  setLabelOverlayVisible(state.labelOverlayVisible !== false)
 }
 
 // ================================================================
 // 초기화
 // ================================================================
 window.addEventListener('DOMContentLoaded', async () => {
+  if (!document.getElementById('canvasStage')) return
   console.log('[App] Initializing Spine Annotator...')
 
   // Annotator 인스턴스 생성
@@ -100,8 +207,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     onStatusChange: handleStatusChange,
   })
 
+  installPelvisRuntimeFinalFixes()
+
   // UI 이벤트 바인딩
   bindUIEvents()
+  setTimeout(ensurePelvisPanelCollapseHardFix, 0) // PELVIS_PANEL_COLLAPSE_HARD_CALL_BIND
+  setTimeout(initRightSidebarCompactUI, 0)
+  initVisibilityControls({ state, annotator: state.annotator })
   bindKeyboardEvents()
 
   // 단축키 UI 초기 렌더링
@@ -120,7 +232,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 토큰 있으면 정상 초기화
-  await postAuthInit()
+  await continueAfterAuthSuccess()
 })
 
 /**
@@ -157,6 +269,7 @@ async function postAuthInit() {
 
   // 로컬 폴더 자동 복원 시도 (실패해도 무시)
   await tryRestoreFolder()
+  await tryRestoreAiFolder()
 
   // 폴더가 복원되지 않았으면 샘플 이미지 자동 로드
   if (!state.folderHandle) {
@@ -189,7 +302,11 @@ async function postAuthInit() {
     }
   })
 
+  initPelvisLabelControls()
+  ensurePelvisPanelCollapseHardFix() // PELVIS_PANEL_COLLAPSE_HARD_CALL_AFTER_INIT
+  initRightSidebarCompactUI()
   console.log('[App] Ready.')
+  ensurePelvisPanelCollapseHardFix() // PELVIS_PANEL_COLLAPSE_HARD_CALL_READY
 }
 
 // ----------------------------------------------------------------
@@ -547,12 +664,25 @@ function bindUIEvents() {
     }
   })
 
+  // 파일별 메모장
+  initNotesModule({
+    state,
+    loadNote,
+    saveNote,
+    exportNotes,
+    getCurrentLabelerId,
+    openAuthModal,
+  })
+
   // 파일 업로드
   document.getElementById('fileUpload').addEventListener('change', handleFileUpload)
   document.getElementById('loadSampleBtn').addEventListener('click', loadSampleImage)
 
   // 폴더 연결
   document.getElementById('connectFolderBtn').addEventListener('click', handleConnectFolder)
+
+  // 보기 / AI mask 오버레이
+  bindOverlayControls()
 
   // 파일 검색
   const searchInput = document.getElementById('fileSearch')
@@ -619,6 +749,900 @@ function setTool(tool) {
 }
 
 // ================================================================
+// 보기 / AI mask 오버레이
+// ================================================================
+const AI_REGIONS = [
+  { id: 'cervical', label: 'Cervical', color: '#bc8cff' },
+  { id: 'thoracic', label: 'Thoracic', color: '#58a6ff' },
+  { id: 'lumbar', label: 'Lumbar', color: '#3fb950' },
+]
+
+function bindOverlayControls() {
+  const labelToggle = document.getElementById('toggleLabelOverlay')
+  if (labelToggle) {
+    labelToggle.checked = state.labelOverlayVisible
+    labelToggle.addEventListener('change', (e) => {
+      state.originalOnly = false
+      updateOriginalOnlyButton()
+      setHumanLabelVisible(e.target.checked)
+    })
+  }
+  ensureAiComparePanel()
+  injectAiCompareControls()
+  const aiToggle = document.getElementById('toggleAiOverlay')
+  if (aiToggle) {
+    const labelSpan = aiToggle.closest('label')?.querySelector('span')
+    if (labelSpan) labelSpan.textContent = '현재 화면에 AI 겹쳐보기'
+    aiToggle.checked = state.aiMaskVisible
+    aiToggle.addEventListener('change', (e) => {
+      state.aiMaskVisible = e.target.checked
+      state.originalOnly = false
+      updateOriginalOnlyButton()
+      state.annotator.setAiMaskVisible(state.aiMaskVisible)
+      applyAiOverlayForCurrentFile().catch(() => {})
+    })
+  }
+  const opacity = document.getElementById('aiOpacity')
+  if (opacity) {
+    opacity.value = String(state.aiOpacity)
+    const value = document.getElementById('aiOpacityValue')
+    if (value) value.textContent = String(state.aiOpacity)
+    opacity.addEventListener('input', (e) => {
+      state.aiOpacity = Number(e.target.value)
+      if (value) value.textContent = String(state.aiOpacity)
+      state.annotator.setAiMaskOpacity(state.aiOpacity)
+      updateAiComparePanel(state.currentAiCompareItems || []).catch(() => {})
+    })
+  }
+  const originalOnlyBtn = document.getElementById('originalOnlyBtn')
+  if (originalOnlyBtn) originalOnlyBtn.addEventListener('click', toggleOriginalOnly)
+  const connectAiBtn = document.getElementById('connectAiFolderBtn')
+  if (connectAiBtn) connectAiBtn.addEventListener('click', handleConnectAiFolder)
+  const refreshAiBtn = document.getElementById('refreshAiFolderBtn')
+  if (refreshAiBtn) refreshAiBtn.addEventListener('click', () => scanAiFolder().catch(err => alert('AI 폴더 새로고침 실패: ' + err.message)))
+  renderAiRegionControls()
+  updateAiFolderStatus()
+}
+
+function injectAiCompareControls() {
+  if (document.getElementById('toggleAiCompare')) return
+  const status = document.getElementById('aiFolderStatus')
+  if (!status) return
+  status.insertAdjacentHTML('afterend', '<div class="control-group"><label class="checkbox-label"><input type="checkbox" id="toggleAiCompare" checked /><span>AI 비교창 보기</span></label></div>')
+  const cb = document.getElementById('toggleAiCompare')
+  cb.checked = state.aiCompareVisible
+  cb.addEventListener('change', (e) => {
+    state.aiCompareVisible = e.target.checked
+    updateAiComparePanel(state.currentAiCompareItems || []).catch(() => {})
+  })
+}
+
+function ensureAiComparePanel() {
+  if (document.getElementById('aiComparePanel')) return
+  const container = document.getElementById('canvasContainer')
+  if (!container) return
+  const panel = document.createElement('div')
+  panel.id = 'aiComparePanel'
+  panel.className = 'ai-compare-panel hidden'
+  panel.innerHTML = '<div class="ai-compare-header"><span><i class="fas fa-robot"></i> AI 비교</span><div class="ai-compare-actions"><button class="btn-icon" id="aiCompareZoomOut" title="축소"><i class="fas fa-search-minus"></i></button><button class="btn-icon" id="aiCompareZoomReset" title="맞춤"><span>100</span></button><button class="btn-icon" id="aiCompareZoomIn" title="확대"><i class="fas fa-search-plus"></i></button><button class="btn-icon" id="closeAiComparePanel" title="비교창 닫기"><i class="fas fa-times"></i></button></div></div><div class="ai-compare-body"><div class="ai-compare-stage"><div class="ai-compare-image-wrap"><canvas id="aiCompareCanvas"></canvas></div></div><div id="aiCompareCaption" class="ai-compare-caption">AI mask 폴더를 연결하세요</div></div>'
+  container.appendChild(panel)
+  document.getElementById('closeAiComparePanel')?.addEventListener('click', () => {
+    state.aiCompareVisible = false
+    const cb = document.getElementById('toggleAiCompare')
+    if (cb) cb.checked = false
+    updateAiComparePanel([]).catch(() => {})
+  })
+  initAiCompareZoomControls()
+}
+
+function initAiCompareZoomControls() {
+  const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
+  if (!stage || stage.dataset.zoomReady === '1') return
+  stage.dataset.zoomReady = '1'
+
+  document.getElementById('aiCompareZoomIn')?.addEventListener('click', () => zoomAiCompareAtCenter((state.aiCompareZoom || 1) * 1.2))
+  document.getElementById('aiCompareZoomOut')?.addEventListener('click', () => zoomAiCompareAtCenter((state.aiCompareZoom || 1) / 1.2))
+  document.getElementById('aiCompareZoomReset')?.addEventListener('click', () => resetAiCompareZoom())
+
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault()
+
+    // 본 앱 라벨링 캔버스와 같은 wheel 정규화/감도 로직.
+    let dy = e.deltaY
+    if (e.deltaMode === 1) dy *= 16
+    else if (e.deltaMode === 2) dy *= 100
+    dy = Math.max(-200, Math.min(200, dy))
+    const sensitivity = 0.0005
+    const factor = Math.exp(-dy * sensitivity)
+
+    const rect = stage.getBoundingClientRect()
+    zoomAiCompareAtPoint((state.aiCompareZoom || 1) * factor, {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    })
+  }, { passive: false })
+
+  stage.addEventListener('pointerdown', (e) => {
+    state.aiCompareDragging = true
+    state.aiCompareDragStartX = e.clientX
+    state.aiCompareDragStartY = e.clientY
+    state.aiCompareStartPanX = state.aiComparePanX || 0
+    state.aiCompareStartPanY = state.aiComparePanY || 0
+    stage.setPointerCapture?.(e.pointerId)
+    stage.classList.add('dragging')
+    e.preventDefault()
+  })
+
+  stage.addEventListener('pointermove', (e) => {
+    if (!state.aiCompareDragging) return
+    state.aiComparePanX = (state.aiCompareStartPanX || 0) + (e.clientX - state.aiCompareDragStartX)
+    state.aiComparePanY = (state.aiCompareStartPanY || 0) + (e.clientY - state.aiCompareDragStartY)
+    applyAiCompareTransform()
+    e.preventDefault()
+  })
+
+  const stopDrag = (e) => {
+    if (!state.aiCompareDragging) return
+    state.aiCompareDragging = false
+    stage.releasePointerCapture?.(e.pointerId)
+    stage.classList.remove('dragging')
+    e.preventDefault()
+  }
+  stage.addEventListener('pointerup', stopDrag)
+  stage.addEventListener('pointercancel', stopDrag)
+  stage.addEventListener('dblclick', () => resetAiCompareZoom())
+}
+
+function zoomAiCompareAtCenter(newScale) {
+  const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
+  if (!stage) return
+  zoomAiCompareAtPoint(newScale, { x: stage.clientWidth / 2, y: stage.clientHeight / 2 })
+}
+
+function zoomAiCompareAtPoint(newScale, point) {
+  const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
+  const wrap = document.querySelector('#aiComparePanel .ai-compare-image-wrap')
+  if (!stage || !wrap) return
+
+  newScale = Math.max(0.25, Math.min(20, Number(newScale) || 1))
+  const oldScale = state.aiCompareZoom || 1
+
+  const layoutX = wrap.offsetLeft
+  const layoutY = wrap.offsetTop
+  const panX = state.aiComparePanX || 0
+  const panY = state.aiComparePanY || 0
+
+  // 본 앱의 zoomAtPoint와 같은 원리:
+  // 포인터 아래의 이미지 좌표가 줌 전/후에도 같은 위치에 남도록 pan을 재계산합니다.
+  const pointTo = {
+    x: (point.x - layoutX - panX) / oldScale,
+    y: (point.y - layoutY - panY) / oldScale,
+  }
+
+  state.aiCompareZoom = newScale
+  state.aiComparePanX = point.x - layoutX - pointTo.x * newScale
+  state.aiComparePanY = point.y - layoutY - pointTo.y * newScale
+  applyAiCompareTransform()
+}
+
+function resetAiCompareZoom() {
+  state.aiCompareZoom = 1
+  state.aiComparePanX = 0
+  state.aiComparePanY = 0
+  applyAiCompareTransform()
+}
+
+function applyAiCompareTransform() {
+  const wrap = document.querySelector('#aiComparePanel .ai-compare-image-wrap')
+  const resetBtn = document.getElementById('aiCompareZoomReset')
+  if (!wrap) return
+  const z = state.aiCompareZoom || 1
+  wrap.style.transform = 'translate(' + (state.aiComparePanX || 0) + 'px, ' + (state.aiComparePanY || 0) + 'px) scale(' + z + ')'
+  wrap.style.transformOrigin = '0 0'
+  wrap.classList.toggle('zoomed', z > 1)
+  if (resetBtn) resetBtn.textContent = Math.round(z * 100)
+}
+
+
+async function updateAiComparePanel(maskItems = []) {
+  ensureAiComparePanel()
+  state.currentAiCompareItems = maskItems
+  const panel = document.getElementById('aiComparePanel')
+  const canvas = document.getElementById('aiCompareCanvas')
+  const caption = document.getElementById('aiCompareCaption')
+  if (!panel || !canvas || !caption) return
+
+  const show = state.aiCompareVisible && !state.originalOnly && !!state.currentImageUrl
+  panel.classList.toggle('hidden', !show)
+  if (!show) return
+
+  const renderToken = (state.aiCompareRenderToken || 0) + 1
+  state.aiCompareRenderToken = renderToken
+
+  try {
+    const names = await renderAiCompareCanvas(canvas, maskItems, renderToken)
+    if (renderToken !== state.aiCompareRenderToken) return
+    if (!maskItems.length) caption.textContent = '현재 이미지에 매칭된 AI mask가 없습니다.'
+    else caption.textContent = names.length ? names.join(' / ') : 'AI mask를 표시하지 못했습니다. 폴더 새로고침을 눌러보세요.'
+  } catch (err) {
+    if (renderToken !== state.aiCompareRenderToken) return
+    console.warn('[AI compare] canvas render failed:', err)
+    caption.textContent = 'AI 비교창 렌더링 실패: ' + (err.message || err)
+  }
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
+async function renderAiCompareCanvas(canvas, maskItems = [], renderToken = 0) {
+  const baseImg = await loadImageElement(state.currentImageUrl)
+  if (renderToken !== state.aiCompareRenderToken) return []
+
+  const w = baseImg.naturalWidth || baseImg.width
+  const h = baseImg.naturalHeight || baseImg.height
+  if (!w || !h) throw new Error('원본 이미지 크기를 읽지 못했습니다')
+
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w
+    canvas.height = h
+  }
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.clearRect(0, 0, w, h)
+  ctx.drawImage(baseImg, 0, 0, w, h)
+
+  const alphaScale = Math.max(0, Math.min(100, Number(state.aiOpacity || 45))) / 100
+  const names = []
+
+  for (const item of maskItems) {
+    if (renderToken !== state.aiCompareRenderToken) return names
+    const maskImg = await loadImageElement(item.url)
+    if (renderToken !== state.aiCompareRenderToken) return names
+
+    const rgb = hexToRgbForCompare(item.color || '#58a6ff')
+    const tmp = document.createElement('canvas')
+    tmp.width = w
+    tmp.height = h
+    const tctx = tmp.getContext('2d', { willReadFrequently: true })
+    tctx.imageSmoothingEnabled = false
+
+    // 핵심: 원본과 mask를 CSS로 따로 맞추지 않고, 원본 canvas 좌표계에 mask를 직접 리사이즈해서 그립니다.
+    // 이렇게 해야 object-fit/브라우저 scaling 때문에 AI mask가 밀려 보이지 않습니다.
+    tctx.drawImage(maskImg, 0, 0, w, h)
+    const imgData = tctx.getImageData(0, 0, w, h)
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      const r = imgData.data[i]
+      const g = imgData.data[i + 1]
+      const b = imgData.data[i + 2]
+      const a = imgData.data[i + 3]
+      const bright = Math.max(r, g, b)
+      if (a > 0 && bright >= 128) {
+        imgData.data[i] = rgb.r
+        imgData.data[i + 1] = rgb.g
+        imgData.data[i + 2] = rgb.b
+        imgData.data[i + 3] = Math.round(230 * alphaScale)
+      } else {
+        imgData.data[i + 3] = 0
+      }
+    }
+    tctx.putImageData(imgData, 0, 0)
+    ctx.drawImage(tmp, 0, 0)
+    names.push((item.region || '') + ': ' + (item.modelKey || item.model || 'model'))
+  }
+
+  updateAiCompareCanvasSize()
+  return names
+}
+
+function updateAiCompareCanvasSize() {
+  const stage = document.querySelector('#aiComparePanel .ai-compare-stage')
+  const wrap = document.querySelector('#aiComparePanel .ai-compare-image-wrap')
+  const canvas = document.getElementById('aiCompareCanvas')
+  if (!stage || !wrap || !canvas || !canvas.width || !canvas.height) return
+
+  const maxW = Math.max(1, stage.clientWidth - 2)
+  const maxH = Math.max(1, stage.clientHeight - 2)
+  const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1)
+  const cssW = Math.max(1, Math.round(canvas.width * scale))
+  const cssH = Math.max(1, Math.round(canvas.height * scale))
+  wrap.style.width = cssW + 'px'
+  wrap.style.height = cssH + 'px'
+  canvas.style.width = cssW + 'px'
+  canvas.style.height = cssH + 'px'
+  applyAiCompareTransform()
+}
+
+function colorizeMaskForCompare(src, color) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      ctx.drawImage(img, 0, 0)
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const rgb = hexToRgbForCompare(color)
+      const alphaScale = Math.max(0, Math.min(100, Number(state.aiOpacity || 45))) / 100
+      for (let i = 0; i < image.data.length; i += 4) {
+        const r = image.data[i], g = image.data[i + 1], b = image.data[i + 2], a = image.data[i + 3]
+        const bright = Math.max(r, g, b)
+        if (a > 0 && bright >= 128) {
+          image.data[i] = rgb.r
+          image.data[i + 1] = rgb.g
+          image.data[i + 2] = rgb.b
+          image.data[i + 3] = Math.round(230 * alphaScale)
+        } else {
+          image.data[i + 3] = 0
+        }
+      }
+      ctx.putImageData(image, 0, 0)
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = reject
+    img.src = src
+  })
+}
+
+function hexToRgbForCompare(hex) {
+  const m = String(hex).replace('#', '').match(/^([0-9a-f]{6})$/i)
+  if (!m) return { r: 88, g: 166, b: 255 }
+  const n = parseInt(m[1], 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+
+function toggleOriginalOnly() {
+  state.originalOnly = !state.originalOnly
+  updateOriginalOnlyButton()
+  state.annotator.setLabelOverlayVisible(state.originalOnly ? false : state.labelOverlayVisible)
+  state.annotator.setAiMaskVisible(state.originalOnly ? false : state.aiMaskVisible)
+  updateAiComparePanel(state.currentAiCompareItems || []).catch(() => {})
+}
+function updateOriginalOnlyButton() {
+  const btn = document.getElementById('originalOnlyBtn')
+  if (!btn) return
+  btn.classList.toggle('active', state.originalOnly)
+  btn.innerHTML = state.originalOnly ? '<i class="fas fa-eye"></i> 원본만 보는 중' : '<i class="fas fa-eye-slash"></i> 원본만 보기'
+}
+const AI_FOLDER_DB_NAME = 'spine-annotator-fs'
+const AI_FOLDER_STORE_NAME = 'handles'
+const AI_FOLDER_HANDLE_KEY = 'aiMaskFolder'
+
+function openAiFolderDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(AI_FOLDER_DB_NAME, 1)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(AI_FOLDER_STORE_NAME)) db.createObjectStore(AI_FOLDER_STORE_NAME)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+async function saveAiFolderHandle(handle) {
+  try {
+    const db = await openAiFolderDB()
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(AI_FOLDER_STORE_NAME, 'readwrite')
+      tx.objectStore(AI_FOLDER_STORE_NAME).put(handle, AI_FOLDER_HANDLE_KEY)
+      tx.oncomplete = resolve
+      tx.onerror = () => reject(tx.error)
+    })
+  } catch (err) {
+    console.warn('[AI folder] save failed:', err)
+  }
+}
+
+async function loadAiFolderHandle() {
+  try {
+    const db = await openAiFolderDB()
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(AI_FOLDER_STORE_NAME, 'readonly')
+      const req = tx.objectStore(AI_FOLDER_STORE_NAME).get(AI_FOLDER_HANDLE_KEY)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch (err) {
+    console.warn('[AI folder] restore failed:', err)
+    return null
+  }
+}
+
+async function tryRestoreAiFolder() {
+  const handle = await loadAiFolderHandle()
+  if (!handle) return false
+  state.aiFolderHandle = handle
+  state.aiFolderName = handle.name || '이전 AI 폴더'
+  updateAiFolderStatus('이전 AI 폴더를 다시 연결할 수 있습니다: ' + state.aiFolderName, 'connected')
+  renderAiRegionControls()
+  try {
+    let perm = 'prompt'
+    if (typeof handle.queryPermission === 'function') perm = await handle.queryPermission({ mode: 'read' })
+    if (perm !== 'granted' && typeof handle.requestPermission === 'function') {
+      perm = await handle.requestPermission({ mode: 'read' })
+    }
+    if (perm === 'granted') {
+      await scanAiFolder()
+      return true
+    }
+    updateAiFolderStatus('AI 폴더 권한이 필요합니다. AI 폴더 다시 연결을 눌러주세요: ' + state.aiFolderName, 'empty')
+  } catch (err) {
+    updateAiFolderStatus('AI 폴더 다시 연결 필요: ' + state.aiFolderName, 'empty')
+  }
+  return false
+}
+
+async function handleConnectAiFolder() {
+  if (!window.showDirectoryPicker) { alert('이 브라우저는 AI 폴더 연결을 지원하지 않습니다. Chrome 또는 Edge를 사용해주세요.'); return }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'spine-annotator-ai-results', mode: 'read', startIn: 'pictures' })
+    state.aiFolderHandle = handle
+    state.aiFolderName = handle.name
+    await saveAiFolderHandle(handle)
+    await scanAiFolder()
+  } catch (err) {
+    if (err.name === 'AbortError') return
+    alert('AI 폴더 연결 실패: ' + err.message)
+  }
+}
+async function scanAiFolder() {
+  if (!state.aiFolderHandle) { updateAiFolderStatus('AI 폴더가 연결되지 않았습니다', 'empty'); return }
+  const files = await listAiMaskFilesRecursive(state.aiFolderHandle)
+  state.aiFiles = files
+  state.aiByBase = new Map()
+  for (const item of files) {
+    const arr = state.aiByBase.get(item.base) || []
+    arr.push(item)
+    state.aiByBase.set(item.base, arr)
+  }
+  updateAiFolderStatus(files.length + '개 AI mask 연결됨', 'connected')
+  renderAiRegionControls()
+  await applyAiOverlayForCurrentFile()
+}
+async function listAiMaskFilesRecursive(dirHandle, prefix = '') {
+  const out = []
+  for await (const [name, entry] of dirHandle.entries()) {
+    const relPath = prefix ? prefix + '/' + name : name
+    if (entry.kind === 'directory') { out.push(...await listAiMaskFilesRecursive(entry, relPath)); continue }
+    const ext = name.split('.').pop()?.toLowerCase()
+    if (!['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(ext)) continue
+    const parsed = parseAiMaskFile(name, relPath)
+    if (parsed) out.push({ ...parsed, name, path: relPath, handle: entry })
+  }
+  out.sort((a, b) => (a.base + '_' + a.region + '_' + a.modelKey).localeCompare(b.base + '_' + b.region + '_' + b.modelKey, undefined, { numeric: true }))
+  return out
+}
+function parseAiMaskFile(name, relPath = name) {
+  const noExt = name.replace(/.(png|jpg|jpeg|webp|bmp)$/i, '')
+  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>vd+)$/i)
+  if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, m.groups.version)
+  m = noExt.match(/^(?<base>.+)_(?<region>cervical|lumbar)_(?<model>.+)_binary_full$/i)
+  if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, 'v0')
+  const parts = relPath.split('/')
+  if (/_mask$/i.test(noExt) && parts.length >= 3) return normalizeAiMeta(parts[parts.length - 3], 'thoracic', parts[parts.length - 2], 'v0')
+  m = noExt.match(/^(?<base>.+?)_(?<model>Weighted_Ensemble|Majority_Vote|U_Net|Coordconv_UNet|Center_plus_Coordconv)_mask$/i)
+  if (m) return normalizeAiMeta(m.groups.base, 'thoracic', m.groups.model, 'v0')
+  return null
+}
+function normalizeAiMeta(base, region, model, version) {
+  const normalizedModel = slugAiName(model)
+  const normalizedVersion = String(version || 'v0').toLowerCase()
+  return { base, region: String(region).toLowerCase(), model: normalizedModel, version: normalizedVersion, modelKey: normalizedModel + '_' + normalizedVersion }
+}
+function slugAiName(name) {
+  return String(name).normalize('NFKC').replace(/^[A-Z]_/, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').toLowerCase()
+}
+function imageBaseName(filename) { return String(filename || '').replace(/.(png|jpg|jpeg|webp|bmp)$/i, '') }
+function getAiCandidatesForCurrentFile() { return state.aiByBase.get(imageBaseName(state.filename)) || [] }
+function renderAiRegionControls() {
+  const container = document.getElementById('aiRegionControls')
+  if (!container) return
+  const candidates = getAiCandidatesForCurrentFile()
+  container.innerHTML = ''
+  if (!state.aiFolderHandle) { container.innerHTML = '<div class="ai-empty">AI mask 폴더를 연결하면 부위별 모델을 선택할 수 있습니다.</div>'; return }
+  for (const region of AI_REGIONS) {
+    const items = candidates.filter(x => x.region === region.id)
+    const modelKeys = [...new Set(items.map(x => x.modelKey))]
+    if (!state.aiSelectedModel[region.id] && modelKeys.length > 0) state.aiSelectedModel[region.id] = preferDefaultModel(modelKeys)
+    if (state.aiSelectedModel[region.id] && !modelKeys.includes(state.aiSelectedModel[region.id]) && modelKeys.length > 0) state.aiSelectedModel[region.id] = preferDefaultModel(modelKeys)
+    const row = document.createElement('div')
+    row.className = 'ai-region-row'
+    const options = items.length === 0 ? '<option>결과 없음</option>' : modelKeys.map(k => '<option value="' + escapeHtml(k) + '" ' + (k === state.aiSelectedModel[region.id] ? 'selected' : '') + '>' + escapeHtml(k) + '</option>').join('')
+    row.innerHTML = '<label class="checkbox-label ai-region-check"><input type="checkbox" ' + (state.aiRegionVisible[region.id] ? 'checked' : '') + ' ' + (items.length === 0 ? 'disabled' : '') + ' /><span class="ai-color-dot" style="background:' + region.color + '"></span><span>' + region.label + '</span></label><select class="select-input ai-model-select" ' + (items.length === 0 ? 'disabled' : '') + '>' + options + '</select>'
+    row.querySelector('input[type="checkbox"]').addEventListener('change', (e) => { state.aiRegionVisible[region.id] = e.target.checked; applyAiOverlayForCurrentFile().catch(() => {}) })
+    row.querySelector('select').addEventListener('change', (e) => { state.aiSelectedModel[region.id] = e.target.value; applyAiOverlayForCurrentFile().catch(() => {}) })
+    container.appendChild(row)
+  }
+}
+function preferDefaultModel(modelKeys) { return modelKeys.find(k => k.includes('weighted_ensemble')) || modelKeys[0] || '' }
+async function applyAiOverlayForCurrentFile() {
+  const token = ++state.aiLoadToken
+  revokeAiObjectUrls()
+  if (!state.annotator) return
+
+  renderAiRegionControls()
+  const candidates = getAiCandidatesForCurrentFile()
+  const selected = []
+  for (const region of AI_REGIONS) {
+    if (!state.aiRegionVisible[region.id]) continue
+    const item = candidates.find(x => x.region === region.id && x.modelKey === state.aiSelectedModel[region.id])
+    if (item) selected.push({ ...item, color: region.color })
+  }
+
+  const maskItems = []
+  for (const item of selected) {
+    const obj = await fileHandleToUrl(item.handle)
+    state.aiObjectUrls.push(obj.url)
+    maskItems.push({ ...item, url: obj.url })
+  }
+  if (token !== state.aiLoadToken) {
+    revokeAiObjectUrls()
+    return
+  }
+
+  state.annotator.setAiMaskOpacity(state.aiOpacity)
+  if (state.aiMaskVisible && !state.originalOnly) {
+    state.annotator.setAiMaskVisible(true)
+    await state.annotator.loadAiMasks(maskItems)
+  } else {
+    state.annotator.clearAiMasks()
+    state.annotator.setAiMaskVisible(false)
+  }
+  await updateAiComparePanel(maskItems)
+}
+function revokeAiObjectUrls() { for (const url of state.aiObjectUrls) URL.revokeObjectURL(url); state.aiObjectUrls = [] }
+function updateAiFolderStatus(message, type = null) {
+  const el = document.getElementById('aiFolderStatus')
+  if (!el) return
+  if (!message) {
+    if (state.aiFolderHandle) { message = (state.aiFolderName || 'AI 폴더') + ' · ' + state.aiFiles.length + '개 mask'; type = 'connected' }
+    else { message = 'AI mask 폴더가 연결되지 않았습니다'; type = 'empty' }
+  }
+  el.className = 'ai-folder-status ' + (type || 'empty')
+  el.textContent = message
+}
+
+
+// ================================================================
+// 우측 사이드바 간단 보기 / 접이식 패널
+// ================================================================
+function initRightSidebarCompactUI() {
+  const sidebar = document.getElementById('sidebarRight')
+  if (!sidebar || sidebar.dataset.compactUiReady === '1') return
+  sidebar.dataset.compactUiReady = '1'
+
+  const COMPACT_KEY = 'spine-annotator:right-sidebar-compact'
+  const PANEL_PREFIX = 'spine-annotator:right-panel-collapsed:'
+
+  const header = sidebar.querySelector('.sidebar-header')
+  if (header && !header.querySelector('.sidebar-header-actions')) {
+    const actions = document.createElement('div')
+    actions.className = 'sidebar-header-actions'
+
+    const compactBtn = document.createElement('button')
+    compactBtn.type = 'button'
+    compactBtn.className = 'sidebar-compact-toggle'
+    compactBtn.title = '우측 패널 간단 보기 전환'
+    compactBtn.innerHTML = '<i class="fas fa-compress-alt"></i><span>간단</span>'
+    actions.appendChild(compactBtn)
+    header.appendChild(actions)
+
+    const applyCompact = (enabled) => {
+      sidebar.classList.toggle('right-sidebar-compact', !!enabled)
+      compactBtn.classList.toggle('active', !!enabled)
+      try { localStorage.setItem(COMPACT_KEY, String(!!enabled)) } catch {}
+    }
+
+    let initialCompact = false
+    try { initialCompact = localStorage.getItem(COMPACT_KEY) === 'true' } catch {}
+    applyCompact(initialCompact)
+
+    compactBtn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      applyCompact(!sidebar.classList.contains('right-sidebar-compact'))
+    })
+  }
+
+  const panels = [...sidebar.querySelectorAll('.panel')]
+  panels.forEach((panel, index) => {
+    const title = panel.querySelector(':scope > .panel-title')
+    if (!title || panel.dataset.collapsibleReady === '1') return
+    panel.dataset.collapsibleReady = '1'
+
+    const titleText = title.textContent.replace(/s+/g, ' ').trim()
+    const key = PANEL_PREFIX + titleText
+
+    let body = panel.querySelector(':scope > .panel-body')
+    if (!body) {
+      body = document.createElement('div')
+      body.className = 'panel-body'
+      const move = []
+      for (const child of [...panel.children]) {
+        if (child !== title) move.push(child)
+      }
+      move.forEach(child => body.appendChild(child))
+      panel.appendChild(body)
+    }
+
+    if (!title.querySelector('.panel-collapse-toggle')) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'panel-collapse-toggle'
+      btn.title = '섹션 접기/펼치기'
+      btn.innerHTML = '<i class="fas fa-chevron-up"></i>'
+      title.appendChild(btn)
+    }
+
+    const shouldDefaultCollapse = /파일 메모|저장/.test(titleText)
+    let collapsed = shouldDefaultCollapse
+    try {
+      const stored = localStorage.getItem(key)
+      if (stored != null) collapsed = stored === 'true'
+    } catch {}
+
+    const applyCollapsed = (value) => {
+      panel.classList.toggle('panel-collapsed', !!value)
+      const icon = title.querySelector('.panel-collapse-toggle i')
+      if (icon) {
+        icon.classList.toggle('fa-chevron-up', !value)
+        icon.classList.toggle('fa-chevron-down', !!value)
+      }
+      try { localStorage.setItem(key, String(!!value)) } catch {}
+    }
+    applyCollapsed(collapsed)
+
+    title.addEventListener('click', (e) => {
+      if (e.target.closest('input, select, textarea, button:not(.panel-collapse-toggle), a')) return
+      applyCollapsed(!panel.classList.contains('panel-collapsed'))
+    })
+  })
+}
+
+
+// ================================================================
+// Final pelvis label runtime guard
+// ================================================================
+const PELVIS_EXTRA_LABELS_FINAL = ['FH_L', 'FH_R', 'HC_L', 'HC_R', 'FH_LAT', 'HC_LAT']
+const PELVIS_POINT_LABELS_FINAL = ['HC_L', 'HC_R', 'HC_LAT']
+
+function isFinalPelvisLabel(label) {
+  return PELVIS_EXTRA_LABELS_FINAL.includes(label)
+}
+
+function clearPelvisLabelActiveButtonsFinal() {
+  document.querySelectorAll('.pelvis-label-btn.active').forEach(btn => btn.classList.remove('active'))
+}
+
+function makePelvisPanelCollapsibleFinal() {
+  const panel = document.getElementById('pelvisLabelPanel')
+  if (!panel || panel.dataset.finalCollapsibleReady === '1') return
+  panel.dataset.finalCollapsibleReady = '1'
+
+  const title = panel.querySelector(':scope > .panel-title') || panel.querySelector('.panel-title')
+  if (!title) return
+
+  let body = panel.querySelector(':scope > .panel-body')
+  if (!body) {
+    body = document.createElement('div')
+    body.className = 'panel-body pelvis-label-body'
+    ;[...panel.children].forEach(child => {
+      if (child !== title) body.appendChild(child)
+    })
+    panel.appendChild(body)
+  }
+
+  if (!title.querySelector('.panel-collapse-toggle')) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'panel-collapse-toggle'
+    btn.title = '섹션 접기/펼치기'
+    btn.innerHTML = '<i class="fas fa-chevron-up"></i>'
+    title.appendChild(btn)
+  }
+
+  const applyCollapsed = (value) => {
+    panel.classList.toggle('panel-collapsed', !!value)
+    const icon = title.querySelector('.panel-collapse-toggle i')
+    if (icon) {
+      icon.classList.toggle('fa-chevron-up', !value)
+      icon.classList.toggle('fa-chevron-down', !!value)
+    }
+    try { localStorage.setItem('spine-annotator:pelvis-panel-collapsed', String(!!value)) } catch {}
+  }
+
+  let collapsed = false
+  try { collapsed = localStorage.getItem('spine-annotator:pelvis-panel-collapsed') === 'true' } catch {}
+  applyCollapsed(collapsed)
+
+  title.addEventListener('click', (e) => {
+    if (e.target.closest('button:not(.panel-collapse-toggle), input, select, textarea, a')) return
+    applyCollapsed(!panel.classList.contains('panel-collapsed'))
+  })
+}
+
+function installPelvisRuntimeFinalFixes() {
+  const a = state.annotator
+  if (!a || a._pelvisRuntimeFinalFixed === true) return
+  a._pelvisRuntimeFinalFixed = true
+
+  if (!('pendingLabel' in a)) a.pendingLabel = null
+  if (!('pendingLabelMode' in a)) a.pendingLabelMode = 'polygon'
+
+  a.setPendingLabel = function(label, mode = '') {
+    this.pendingLabel = label || null
+    this.pendingLabelMode = mode || (PELVIS_POINT_LABELS_FINAL.includes(label) ? 'point' : 'polygon')
+    if (typeof this.updateStatus === 'function') this.updateStatus()
+  }
+
+  const originalRelabelAll = typeof a.relabelAll === 'function' ? a.relabelAll.bind(a) : null
+  a.relabelAll = function() {
+    try {
+      const startIdx = Math.max(0, LABELS.indexOf(this.startLabel || 'C2'))
+      const autoPolygons = (this.polygons || []).filter(p => {
+        if (!p) return false
+        if (p.manualLabel === true) return false
+        if (isFinalPelvisLabel(p.label)) return false
+        return true
+      })
+      autoPolygons.forEach(p => { p._centroidY = computeSimpleCentroidYFinal(p.points) })
+      autoPolygons.sort((x, y) => x._centroidY - y._centroidY)
+      autoPolygons.forEach((p, i) => {
+        p.label = LABELS[startIdx + i] || '?'
+      })
+      ;(this.polygons || []).forEach(p => { p._centroidY = computeSimpleCentroidYFinal(p.points) })
+      ;(this.polygons || []).sort((x, y) => x._centroidY - y._centroidY)
+    } catch (err) {
+      if (originalRelabelAll) originalRelabelAll()
+    }
+  }
+
+  const originalAddPoint = typeof a.addPoint === 'function' ? a.addPoint.bind(a) : null
+  if (originalAddPoint) {
+    a.addPoint = function(x, y) {
+      const pending = this.pendingLabel
+      if (!this.drawing && PELVIS_POINT_LABELS_FINAL.includes(pending)) {
+        const scale = Math.max(0.1, this.stage?.scaleX?.() || 1)
+        const r = 5 / scale
+        const maxId = (this.polygons || []).reduce((m, p) => Math.max(m, Number(p.id) || 0), 0)
+        this.polygons.push({
+          id: Math.max(Date.now(), maxId + 1),
+          label: pending,
+          points: [x, y - r, x + r, y, x, y + r, x - r, y],
+          manualLabel: true,
+          landmark: true,
+        })
+        this.pendingLabel = null
+        this.pendingLabelMode = 'polygon'
+        if (typeof this.renderPolygons === 'function') this.renderPolygons()
+        if (typeof this.pushHistory === 'function') this.pushHistory()
+        if (typeof this.notifyPolygons === 'function') this.notifyPolygons()
+        if (typeof this.updateStatus === 'function') this.updateStatus()
+        clearPelvisLabelActiveButtonsFinal()
+        return
+      }
+      return originalAddPoint(x, y)
+    }
+  }
+
+  const originalFinishDrawing = typeof a.finishDrawing === 'function' ? a.finishDrawing.bind(a) : null
+  if (originalFinishDrawing) {
+    a.finishDrawing = function(opts = {}) {
+      const pending = this.pendingLabel
+      const shouldUsePending = isFinalPelvisLabel(pending) && !PELVIS_POINT_LABELS_FINAL.includes(pending)
+      const beforeIds = new Set((this.polygons || []).map(p => p.id))
+      const result = originalFinishDrawing(opts)
+      if (shouldUsePending) {
+        const created = (this.polygons || []).find(p => !beforeIds.has(p.id))
+        if (created) {
+          created.label = pending
+          created.manualLabel = true
+          created.landmark = false
+          this.pendingLabel = null
+          this.pendingLabelMode = 'polygon'
+          if (typeof this.relabelAll === 'function') this.relabelAll()
+          if (typeof this.renderPolygons === 'function') this.renderPolygons()
+          if (typeof this.pushHistory === 'function') this.pushHistory()
+          if (typeof this.notifyPolygons === 'function') this.notifyPolygons()
+          if (typeof this.updateStatus === 'function') this.updateStatus()
+          clearPelvisLabelActiveButtonsFinal()
+        }
+      }
+      return result
+    }
+  }
+}
+
+function computeSimpleCentroidYFinal(pts) {
+  if (!Array.isArray(pts) || pts.length < 2) return 0
+  let cy = 0
+  let n = 0
+  for (let i = 1; i < pts.length; i += 2) {
+    cy += Number(pts[i]) || 0
+    n++
+  }
+  return n ? cy / n : 0
+}
+
+
+// ================================================================
+// Hard fix: collapsible pelvis label panel
+// ================================================================
+function ensurePelvisPanelCollapseHardFix() {
+  const attach = () => {
+    const panel = document.getElementById('pelvisLabelPanel')
+    if (!panel) return false
+
+    const title = panel.querySelector(':scope > .panel-title') || panel.querySelector('.panel-title')
+    if (!title) return false
+
+    let body = panel.querySelector(':scope > .panel-body')
+    if (!body) {
+      body = document.createElement('div')
+      body.className = 'panel-body pelvis-label-body'
+      for (const child of [...panel.children]) {
+        if (child !== title) body.appendChild(child)
+      }
+      panel.appendChild(body)
+    }
+
+    let btn = title.querySelector('.panel-collapse-toggle')
+    if (!btn) {
+      btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'panel-collapse-toggle'
+      btn.title = '섹션 접기/펼치기'
+      btn.innerHTML = '<i class="fas fa-chevron-up"></i>'
+      title.appendChild(btn)
+    }
+
+    const applyCollapsed = (collapsed) => {
+      panel.classList.toggle('panel-collapsed', !!collapsed)
+      const icon = btn.querySelector('i')
+      if (icon) {
+        icon.classList.toggle('fa-chevron-up', !collapsed)
+        icon.classList.toggle('fa-chevron-down', !!collapsed)
+      }
+      try { localStorage.setItem('spine-annotator:pelvis-panel-collapsed', String(!!collapsed)) } catch {}
+    }
+
+    if (panel.dataset.pelvisCollapseHardReady !== '1') {
+      panel.dataset.pelvisCollapseHardReady = '1'
+      let initial = false
+      try { initial = localStorage.getItem('spine-annotator:pelvis-panel-collapsed') === 'true' } catch {}
+      applyCollapsed(initial)
+
+      title.addEventListener('click', (e) => {
+        if (e.target.closest('button:not(.panel-collapse-toggle), input, select, textarea, a')) return
+        applyCollapsed(!panel.classList.contains('panel-collapsed'))
+      })
+      btn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        applyCollapsed(!panel.classList.contains('panel-collapsed'))
+      })
+    }
+
+    return true
+  }
+
+  if (attach()) return
+  setTimeout(attach, 0)
+  setTimeout(attach, 100)
+  setTimeout(attach, 300)
+  setTimeout(attach, 800)
+}
+
+// ================================================================
 // 키보드 단축키
 // ================================================================
 const heldHoldables = new Set() // 누르고 있는 동안 동작하는 키 (중복 keydown 방지)
@@ -634,6 +1658,12 @@ function bindKeyboardEvents() {
 
     const normalized = normalizeKey(e)
     if (!normalized) return
+
+    if (normalized === 'h') {
+      state.annotator.setLabelOverlayVisible(false)
+      e.preventDefault()
+      return
+    }
 
     const action = findAction(state.shortcuts, normalized)
     if (!action) return
@@ -657,6 +1687,12 @@ function bindKeyboardEvents() {
     if (!normalized) return
 
     // holdable 액션의 해제
+    if (normalized === 'h') {
+      state.annotator.setLabelOverlayVisible(state.labelOverlayVisible && !state.originalOnly)
+      e.preventDefault()
+      return
+    }
+
     for (const id of heldHoldables) {
       if (state.shortcuts[id] === normalized) {
         heldHoldables.delete(id)
@@ -737,6 +1773,7 @@ function runAction(actionId) {
 async function loadSampleImage() {
   // 샘플 X-ray 이미지를 로드 (외부 의료 영상 샘플)
   const sampleUrl = '/static/sample-spine.png'
+  state.currentImageUrl = sampleUrl
   state.filename = 'sample_00000000_AP.png'
   state.viewType = 'AP'
   state.patientId = 'sample'
@@ -764,9 +1801,11 @@ function handleFileUpload(e) {
   state.viewType = parsed.viewType || 'AP'
 
   const url = URL.createObjectURL(file)
+  state.currentImageUrl = url
   state.annotator.loadImage(url).then(() => {
     updateFileInfo()
     document.getElementById('canvasPlaceholder').classList.add('hidden')
+    applyAiOverlayForCurrentFile().catch(() => {})
   })
 }
 
@@ -777,6 +1816,8 @@ function updateFileInfo() {
   badge.setAttribute('data-view', state.viewType)
   state.imageWidth = state.annotator.imageWidth
   state.imageHeight = state.annotator.imageHeight
+  renderAiRegionControls()
+  loadCurrentNoteFromModule().catch(err => console.warn('Note load failed:', err))
 }
 
 // ================================================================
@@ -812,7 +1853,7 @@ function createLabelItem(poly) {
   // 라벨 변경 드롭다운
   const select = document.createElement('select')
   select.className = 'label-name-select'
-  LABELS.forEach((lbl) => {
+  ALL_LABELS.forEach((lbl) => {
     const opt = document.createElement('option')
     opt.value = lbl
     opt.textContent = lbl
@@ -937,6 +1978,89 @@ function autoSave() {
       }
     }
   }, 300)  // 디바운스 단축 (500 → 300ms)
+}
+
+// ================================================================
+// 파일별 메모장 - 라벨/COCO와 분리 저장
+// ================================================================
+function bindNoteControls() {
+  const input = document.getElementById('fileNoteInput')
+  if (input && !input.dataset.bound) {
+    input.dataset.bound = '1'
+    input.addEventListener('input', () => {
+      if (state.noteLoading) return
+      setNoteStatus('저장 대기...', false)
+      scheduleNoteSave()
+    })
+  }
+  const exportBtn = document.getElementById('exportNotesBtn')
+  if (exportBtn && !exportBtn.dataset.bound) {
+    exportBtn.dataset.bound = '1'
+    exportBtn.addEventListener('click', downloadAllNotes)
+  }
+}
+function setNoteStatus(text, isError = false) {
+  const el = document.getElementById('noteStatus')
+  if (!el) return
+  el.textContent = text
+  el.classList.toggle('save-error', !!isError)
+}
+async function loadNoteForCurrentFile() {
+  const input = document.getElementById('fileNoteInput')
+  if (!input || !state.filename) return
+  state.noteLoading = true
+  input.disabled = true
+  input.value = ''
+  setNoteStatus('메모 불러오는 중...', false)
+  try {
+    const data = await loadNote(state.filename)
+    input.value = data.note_text || ''
+    input.disabled = false
+    if (data.exists && data.updated_at) setNoteStatus('메모 저장됨 ' + new Date(data.updated_at).toLocaleTimeString(), false)
+    else setNoteStatus('메모 없음', false)
+  } catch (err) {
+    input.disabled = false
+    if (err.status === 401) openAuthModal()
+    setNoteStatus('메모 로드 실패', true)
+  } finally {
+    state.noteLoading = false
+  }
+}
+function scheduleNoteSave() {
+  if (state.noteSaveTimer) clearTimeout(state.noteSaveTimer)
+  state.noteSaveTimer = setTimeout(() => saveCurrentNoteNow().catch(err => {
+    console.error('Note save failed:', err)
+    if (err.status === 401) openAuthModal()
+    setNoteStatus('메모 저장 실패', true)
+  }), 700)
+}
+async function saveCurrentNoteNow() {
+  const input = document.getElementById('fileNoteInput')
+  if (!input || !state.filename || state.noteLoading) return
+  const labelerId = getCurrentLabelerId()
+  setNoteStatus('메모 저장 중...', false)
+  const result = await saveNote(state.filename, { note_text: input.value, labeler_id: labelerId })
+  state.noteLastSavedAt = result.updated_at || new Date().toISOString()
+  setNoteStatus(input.value.trim() ? '메모 저장됨 ' + new Date(state.noteLastSavedAt).toLocaleTimeString() : '메모 없음', false)
+}
+async function downloadAllNotes() {
+  try {
+    if (state.noteSaveTimer) { clearTimeout(state.noteSaveTimer); state.noteSaveTimer = null; await saveCurrentNoteNow() }
+    const data = await exportNotes()
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    const payload = { type: 'spine-annotator-file-notes', exported_at: data.exported_at || new Date().toISOString(), count: (data.items || []).length, items: data.items || [] }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'spine-file-notes-' + ts + '.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    alert('메모 내보내기 실패: ' + err.message)
+  }
 }
 
 // ================================================================
@@ -1363,7 +2487,8 @@ async function scanFolder() {
   if (!state.folderHandle) return
 
   try {
-    const files = await listImageFiles(state.folderHandle)
+    const allFiles = await listImageFiles(state.folderHandle)
+    const files = allFiles.filter(f => !parseAiMaskFile(f.name, f.name))
     state.files = files
 
     updateFolderStatus(`연결됨: ${files.length}개 이미지`, 'connected')
@@ -1545,6 +2670,7 @@ async function loadFileFromFolder(fileEntry) {
 
     const { url } = await fileHandleToUrl(fileEntry.handle)
     state.currentObjectUrl = url
+    state.currentImageUrl = url
     state.filename = fileEntry.name
     // 새 파일 열림 → 원격 수정 감지 초기화 (처음 로드는 알림 X)
     state.lastSeenRemoteUpdate = null
@@ -1565,6 +2691,9 @@ async function loadFileFromFolder(fileEntry) {
 
     // 저장된 라벨 불러오기 (서버에서)
     await loadLabelsFromStorage(fileEntry.name)
+
+    // 현재 이미지에 맞는 AI mask가 있으면 겹쳐 표시
+    await applyAiOverlayForCurrentFile()
 
     // 파일 목록 활성 상태 갱신
     renderFileList()
@@ -1621,6 +2750,7 @@ async function loadLabelsFromStorage(filename) {
       state.labelVersion = null
       // 저장된 라벨 없음 → 빈 상태로 시작
       state.annotator.loadPolygons([])
+      refreshVisibilityControls({ state, annotator: state.annotator })
       // 이 시점 이후 다른 사람이 수정하면 알림
       state.lastSeenRemoteUpdate = null
       state.lastSeenRemoteUpdateInitialized = true
@@ -1635,6 +2765,7 @@ async function loadLabelsFromStorage(filename) {
     if (data.image_width) state.imageWidth = data.image_width
     if (data.image_height) state.imageHeight = data.image_height
     state.annotator.loadPolygons(Array.isArray(data.polygons) ? data.polygons : [])
+    refreshVisibilityControls({ state, annotator: state.annotator })
     // 방금 본 서버 버전 기준점 저장 → 다음 polling부터 변경 감지
     state.lastSeenRemoteUpdate = data.updated_at
     state.lastSeenRemoteUpdateInitialized = true
@@ -1768,6 +2899,33 @@ function escapeHtml(s) {
 }
 
 // ================================================================
+// 인증 성공 후 안전 초기화
+// ================================================================
+async function continueAfterAuthSuccess() {
+  try {
+    await postAuthInit()
+  } catch (err) {
+    console.error('[Auth] post-auth initialization failed:', err)
+    if (err && err.status === 401) {
+      openAuthModal()
+      return
+    }
+    showStartupError(err)
+  }
+}
+
+function showStartupError(err) {
+  let box = document.getElementById('startupErrorBox')
+  if (!box) {
+    box = document.createElement('div')
+    box.id = 'startupErrorBox'
+    box.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;z-index:99999;background:#3b1111;color:#fff;border:1px solid #ff7b72;border-radius:10px;padding:12px 14px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.35)'
+    document.body.appendChild(box)
+  }
+  box.innerHTML = '<strong>초기화 오류</strong><br>' + escapeHtml(err?.message || String(err || 'unknown error')) + '<br><span style="opacity:.8">새로고침(Ctrl+F5) 후에도 반복되면 콘솔 오류를 보내주세요.</span>'
+}
+
+// ================================================================
 // 인증 (비밀번호) 관리
 // ================================================================
 function initAuthUI() {
@@ -1784,14 +2942,15 @@ function initAuthUI() {
     errEl.classList.add('hidden')
     try {
       await verifyPassword(password)
-      closeAuthModal()
-      // 인증 성공 후 나머지 초기화 진행 (postAuthInit이 아직 안 돌았다면)
-      await postAuthInit()
     } catch (err) {
       errEl.textContent = err.message || '인증 실패'
       errEl.classList.remove('hidden')
       input.select()
+      return
     }
+    closeAuthModal()
+    // 비밀번호 검증 성공. 이후 초기화 실패는 비밀번호 오류로 표시하지 않는다.
+    await continueAfterAuthSuccess()
   })
 }
 
@@ -1903,3 +3062,50 @@ function updateLabelerButton() {
   }
 }
 
+
+// ================================================================
+// 골반/고관절 빠른 라벨
+// ================================================================
+
+function clearPelvisLabelActiveButtons() {
+  document.querySelectorAll('.pelvis-label-btn.active').forEach(btn => btn.classList.remove('active'))
+}
+
+function initPelvisLabelControls() {
+  const sidebar = document.getElementById('sidebarRight')
+  const scroll = sidebar?.querySelector('.sidebar-scroll')
+  if (!scroll || document.getElementById('pelvisLabelPanel')) return
+
+  const panel = document.createElement('div')
+  panel.className = 'panel pelvis-label-panel'
+  panel.id = 'pelvisLabelPanel'
+  panel.innerHTML = `
+    <h3 class="panel-title"><i class="fas fa-location-dot"></i> 골반 라벨</h3>
+    <div class="pelvis-label-grid">
+      <button type="button" class="pelvis-label-btn" data-label="FH_L" data-mode="polygon">FH_L</button>
+      <button type="button" class="pelvis-label-btn" data-label="FH_R" data-mode="polygon">FH_R</button>
+      <button type="button" class="pelvis-label-btn" data-label="HC_L" data-mode="point">HC_L 점</button>
+      <button type="button" class="pelvis-label-btn" data-label="HC_R" data-mode="point">HC_R 점</button>
+      <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="polygon">FH_LAT</button>
+      <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="HC_LAT" data-mode="point">HC_LAT 점</button>
+    </div>
+    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 폴리곤, HC는 점 클릭입니다.</p>
+  `
+
+  const labelPanel = document.getElementById('labelList')?.closest('.panel')
+  if (labelPanel) scroll.insertBefore(panel, labelPanel)
+  else scroll.appendChild(panel)
+
+  if (typeof initRightSidebarCompactUI === 'function') initRightSidebarCompactUI() // refresh collapsible for pelvis panel
+
+  panel.querySelectorAll('.pelvis-label-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      panel.querySelectorAll('.pelvis-label-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      state.annotator.setPendingLabel(btn.dataset.label, btn.dataset.mode)
+      if (btn.dataset.mode === 'point') {
+        // point mode clears after the next canvas click from runtime guard
+      }
+    })
+  })
+}

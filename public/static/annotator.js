@@ -2,7 +2,7 @@
    SpineAnnotator - Konva.js 기반 폴리곤 라벨링 엔진
    ================================================================ */
 
-import { LABELS, getRegionColor, generateLabels } from './labels.js'
+import { LABELS, getRegionColor, generateLabels, isSpineLabel, isExtraLabel, isPelvisPointLabel } from './labels.js'
 
 const MIN_POINTS = 3
 const POINT_RADIUS = 5
@@ -27,10 +27,19 @@ export class SpineAnnotator {
     this.polygons = [] // [{ id, label, points: [x,y,...], shape, vertexShapes }]
     this.selectedId = null
     this.startLabel = 'C2'
+    this.pendingLabel = null
+    this.pendingLabelMode = 'polygon'
     this.imageWidth = 0
     this.imageHeight = 0
     this.imageNode = null
     this.imageFilters = { brightness: 0, contrast: 0, invert: false }
+
+    // 오버레이 표시 상태
+    this.aiMaskNodes = []
+    this.aiMaskOpacity = 0.45
+    this.humanLabelVisible = true
+    this.labelOverlayVisible = true
+    this.aiMaskOverlayVisible = true
 
     // 그리기 중 상태
     this.drawing = false
@@ -50,7 +59,6 @@ export class SpineAnnotator {
     // 자유곡선 드로잉 모드 (S키 + 드래그)
     // S 누른 상태에서 드래그하면 일정 간격마다 점이 자동 추가됨
     this.freehandMode = false      // S키 눌림 (드래그 안 해도 활성화)
-    this.freehandDragging = false  // 실제 드래그 진행 중 (마우스 다운 상태)
     // 자유곡선 점 간격 (화면 픽셀 기준) — 작을수록 부드럽고 점 많아짐
     this.FREEHAND_SPACING_PX = 8
 
@@ -75,10 +83,12 @@ export class SpineAnnotator {
     })
 
     this.imageLayer = new Konva.Layer()
+    this.aiMaskLayer = new Konva.Layer()
     this.polyLayer = new Konva.Layer()
     this.previewLayer = new Konva.Layer()
 
     this.stage.add(this.imageLayer)
+    this.stage.add(this.aiMaskLayer)
     this.stage.add(this.polyLayer)
     this.stage.add(this.previewLayer)
 
@@ -90,10 +100,6 @@ export class SpineAnnotator {
     this.stage.on('mousemove', (e) => this.onMouseMove(e))
     this.stage.on('mouseup', (e) => this.onMouseUp(e))
     this.stage.on('dblclick', (e) => this.onDoubleClick(e))
-    // 캔버스 밖으로 빠져나가도 freehand 드래그 종료
-    window.addEventListener('mouseup', () => {
-      if (this.freehandDragging) this.freehandDragging = false
-    })
     this.stage.on('wheel', (e) => this.onWheel(e))
 
     // 빈 영역 클릭 시 선택 해제
@@ -116,6 +122,7 @@ export class SpineAnnotator {
     const rect = this.containerEl.getBoundingClientRect()
     this.stage.width(rect.width)
     this.stage.height(rect.height)
+    this.refreshPolygonVisualScale()
   }
 
   // ============================================================
@@ -129,8 +136,9 @@ export class SpineAnnotator {
         this.imageWidth = imgObj.width
         this.imageHeight = imgObj.height
 
-        // 기존 이미지 제거
+        // 기존 이미지/AI 오버레이 제거
         this.imageLayer.destroyChildren()
+        if (typeof this.clearAiMasks === 'function') this.clearAiMasks()
 
         this.imageNode = new Konva.Image({
           image: imgObj,
@@ -182,6 +190,133 @@ export class SpineAnnotator {
   }
 
   // ============================================================
+  // 오버레이 표시 / AI mask
+  // ============================================================
+  setHumanLabelVisible(visible) {
+    this.humanLabelVisible = visible !== false
+    if (this.polyLayer) {
+      this.polyLayer.visible(this.humanLabelVisible)
+      this.polyLayer.batchDraw()
+    }
+  }
+
+  getHumanLabelVisible() {
+    return this.humanLabelVisible !== false
+  }
+
+  setLabelOverlayVisible(visible) {
+    this.labelOverlayVisible = visible !== false
+    this.renderPolygons()
+  }
+
+  getLabelOverlayVisible() {
+    return this.labelOverlayVisible !== false
+  }
+
+
+  // ============================================================
+  // AI mask overlay methods
+  // ============================================================
+  setAiMaskVisible(visible) {
+    this.aiMaskOverlayVisible = visible !== false
+    if (this.aiMaskLayer) {
+      this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
+      this.aiMaskLayer.batchDraw()
+    }
+  }
+
+  setAiMaskOpacity(percent) {
+    const value = Math.max(0, Math.min(100, Number(percent))) / 100
+    this.aiMaskOpacity = value
+    if (this.aiMaskLayer) {
+      this.aiMaskLayer.opacity(value)
+      this.aiMaskLayer.batchDraw()
+    }
+  }
+
+  clearAiMasks() {
+    this.aiMaskNodes = []
+    if (this.aiMaskLayer) {
+      this.aiMaskLayer.destroyChildren()
+      this.aiMaskLayer.draw()
+    }
+  }
+
+  async loadAiMasks(items = []) {
+    this.clearAiMasks()
+    if (!items.length || !this.imageWidth || !this.imageHeight || !this.aiMaskLayer) return
+    const nodes = []
+    for (const item of items) {
+      try {
+        const img = await this.loadMaskImage(item.url)
+        const colored = this.colorizeMaskImage(img, item.color || '#58a6ff')
+        const node = new Konva.Image({
+          image: colored,
+          x: 0,
+          y: 0,
+          width: this.imageWidth,
+          height: this.imageHeight,
+          listening: false,
+          opacity: 1,
+        })
+        node.setAttr('aiRegion', item.region || '')
+        node.setAttr('aiModel', item.modelKey || item.model || '')
+        this.aiMaskLayer.add(node)
+        nodes.push(node)
+      } catch (err) {
+        console.warn('[AI mask] load failed:', item, err)
+      }
+    }
+    this.aiMaskNodes = nodes
+    this.aiMaskLayer.opacity(this.aiMaskOpacity)
+    this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
+    this.aiMaskLayer.draw()
+  }
+
+  loadMaskImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = src
+    })
+  }
+
+  colorizeMaskImage(img, color) {
+    const canvas = document.createElement('canvas')
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    ctx.drawImage(img, 0, 0)
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const rgb = this.hexToRgb(color)
+    for (let i = 0; i < data.data.length; i += 4) {
+      const r = data.data[i]
+      const g = data.data[i + 1]
+      const b = data.data[i + 2]
+      const a = data.data[i + 3]
+      const brightness = Math.max(r, g, b)
+      if (a > 0 && brightness >= 128) {
+        data.data[i] = rgb.r
+        data.data[i + 1] = rgb.g
+        data.data[i + 2] = rgb.b
+        data.data[i + 3] = 230
+      } else {
+        data.data[i + 3] = 0
+      }
+    }
+    ctx.putImageData(data, 0, 0)
+    return canvas
+  }
+
+  hexToRgb(hex) {
+    const m = String(hex).replace('#', '').match(/^([0-9a-f]{6})$/i)
+    if (!m) return { r: 88, g: 166, b: 255 }
+    const n = parseInt(m[1], 16)
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+  }
+
+  // ============================================================
   // 줌 / 팬
   // ============================================================
   zoomToFit() {
@@ -199,6 +334,7 @@ export class SpineAnnotator {
     })
     this.stage.batchDraw()
     this.notifyZoom()
+    this.refreshPolygonVisualScale()
   }
 
   zoomTo(scale) {
@@ -233,6 +369,7 @@ export class SpineAnnotator {
     })
     this.stage.batchDraw()
     this.notifyZoom()
+    this.refreshPolygonVisualScale()
   }
 
   onWheel(e) {
@@ -276,15 +413,12 @@ export class SpineAnnotator {
 
   /**
    * 자유 곡선 모드 (S키 누름)
-   * - 활성화 시: 마우스 드래그하면 일정 간격마다 점 자동 추가됨
+   * - 활성화 시: 마우스를 움직이면 일정 간격마다 점 자동 추가됨
    * - 그리기 도구일 때만 의미 있음
-   * - 비활성화 시: 드래그도 멈춤
+   * - 비활성화 시: 일반 클릭 모드로 복귀
    */
   setFreehandMode(enabled) {
     this.freehandMode = enabled
-    if (!enabled) {
-      this.freehandDragging = false
-    }
     // 그리기 모드에서만 시각 피드백
     if (this.tool === 'draw' && !this.panMode) {
       this.containerEl.style.cursor = enabled ? 'cell' : 'crosshair'
@@ -365,11 +499,11 @@ export class SpineAnnotator {
     } else if (this.freehandMode && this.tool === 'draw') {
       const n = this.currentPoints.length / 2
       if (this.freehandDragging) {
-        text = `🖊️ 자유곡선 드래그 중 — 점 ${n}개 (마우스 놓으면 일시 정지, 다시 드래그 가능)`
+        text = `🖊️ 자유곡선 모드 — 마우스를 움직이면 점 추가 (현재 ${n}개) / S 떼면 일시 정지 / Q: 완성`
       } else if (this.drawing) {
-        text = `🖊️ 자유곡선 모드 — 드래그로 점 추가 (현재 ${n}개) / S 떼면 종료 / Q: 완성`
+        text = `🖊️ 자유곡선 모드 — 마우스를 움직이면 점 추가 (현재 ${n}개) / S 떼면 일시 정지 / Q: 완성`
       } else {
-        text = '🖊️ 자유곡선 모드 — 마우스를 누른 채 드래그하세요 (S 떼면 일반 클릭 모드)'
+        text = '🖊️ 자유곡선 모드 — 마우스를 움직이면 바로 점이 찍힙니다 (S 떼면 일반 클릭 모드)'
       }
     } else if (this.tool === 'draw') {
       if (this.drawing) {
@@ -410,13 +544,9 @@ export class SpineAnnotator {
         // 그릴 때는 본인 점 클릭으로 닫기 가능 (시작점)
         return
       }
-
-      // 자유곡선 모드: 드래그 시작
-      if (this.freehandMode) {
-        this.freehandDragging = true
-        this.addPoint(pos.x, pos.y)
-        return
-      }
+      // 자유곡선 모드에서는 클릭이 아니라 마우스 이동으로 점을 추가합니다.
+      // 마우스를 누르고 있을 필요가 없도록 여기서는 일반 클릭 점 추가를 막습니다.
+      if (this.freehandMode) return
 
       this.addPoint(pos.x, pos.y)
     } else if (this.tool === 'edit') {
@@ -445,41 +575,42 @@ export class SpineAnnotator {
   }
 
   onMouseUp(e) {
-    // 자유곡선 드래그 종료
-    if (this.freehandDragging) {
-      this.freehandDragging = false
-      // 그리는 중이면 status만 갱신 (점 더 찍을 수 있음 — 한 번 더 드래그 가능)
-      this.updateStatus()
-    }
+    // 자유곡선은 이제 마우스 버튼을 누르고 있을 필요가 없으므로 별도 처리 없음
   }
 
   onMouseMove(e) {
-    // 그리기 중 + 그리기 모드: 기존 미리보기 동작
-    if (this.drawing && this.tool === 'draw') {
-      const pos = this.getImagePos()
+    const pos = this.getImagePos()
+
+    // S 자유곡선 모드: 마우스 버튼을 누르지 않고 이동만 해도 일정 간격마다 점 추가
+    if (this.tool === 'draw' && this.freehandMode && !this.panMode) {
       if (!pos) return
 
-      // 자유곡선 드래그 중: 일정 간격마다 점 자동 추가
-      if (this.freehandMode && this.freehandDragging) {
-        const n = this.currentPoints.length
-        if (n >= 2) {
-          const lastX = this.currentPoints[n - 2]
-          const lastY = this.currentPoints[n - 1]
-          const dx = pos.x - lastX
-          const dy = pos.y - lastY
-          // 화면 픽셀 기준 거리
-          const screenDist = Math.sqrt(dx * dx + dy * dy) * this.stage.scaleX()
-          if (screenDist >= this.FREEHAND_SPACING_PX) {
-            this.addPoint(pos.x, pos.y)
-            return
-          }
-        }
+      const n = this.currentPoints.length
+      if (!this.drawing || n < 2) {
+        this.addPoint(pos.x, pos.y)
+        return
+      }
+
+      const lastX = this.currentPoints[n - 2]
+      const lastY = this.currentPoints[n - 1]
+      const dx = pos.x - lastX
+      const dy = pos.y - lastY
+      const screenDist = Math.sqrt(dx * dx + dy * dy) * this.stage.scaleX()
+      if (screenDist >= this.FREEHAND_SPACING_PX) {
+        this.addPoint(pos.x, pos.y)
+        return
       }
 
       this.updatePreview(pos.x, pos.y)
       return
     }
-    // 그리기 중 + 편집 모드: 미리보기 라인은 멈추고 점 드래그만 (별도 처리 없음)
+
+    // 그리기 중 + 그리기 모드: 기존 미리보기 동작
+    if (this.drawing && this.tool === 'draw') {
+      if (!pos) return
+      this.updatePreview(pos.x, pos.y)
+      return
+    }
 
     // 편집 모드 + 그리기 아님: 선택된 폴리곤의 변 호버 미리보기
     if (this.tool === 'edit' && !this.drawing && this.selectedId != null && !this.panMode) {
@@ -598,7 +729,42 @@ export class SpineAnnotator {
   // ============================================================
   // 폴리곤 그리기
   // ============================================================
+  setPendingLabel(label, mode = '') {
+    this.pendingLabel = label || null
+    this.pendingLabelMode = mode || (isPelvisPointLabel(label) ? 'point' : 'polygon')
+    this.updateStatus()
+  }
+
+  addLandmarkPoint(x, y, label) {
+    if (!label) return
+    const r = 5 / Math.max(0.1, this.stage.scaleX())
+    const points = [x, y - r, x + r, y, x, y + r, x - r, y]
+    const newPoly = {
+      id: polyIdCounter++,
+      label,
+      points,
+      manualLabel: true,
+      landmark: true,
+    }
+    this.polygons.push(newPoly)
+    this.pendingLabel = null
+    this.pendingLabelMode = 'polygon'
+    this.renderPolygons()
+    this.pushHistory()
+    this.notifyPolygons()
+    this.updateStatus()
+  }
+
   addPoint(x, y) {
+    // PELVIS_POINT_LABEL_ONE_SHOT
+    if (!this.drawing && this.pendingLabel && this.pendingLabelMode === 'point') {
+      this.addLandmarkPoint(x, y, this.pendingLabel)
+      return
+    }
+    if (!this.drawing && this.pendingLabel && this.pendingLabelMode === 'point') {
+      this.addLandmarkPoint(x, y, this.pendingLabel)
+      return
+    }
     if (!this.drawing) {
       this.drawing = true
       this.currentPoints = []
@@ -718,8 +884,10 @@ export class SpineAnnotator {
     // 폴리곤 추가
     const newPoly = {
       id: polyIdCounter++,
-      label: null, // 나중에 정렬해서 자동 할당
+      label: this.pendingLabel || null,
       points,
+      manualLabel: !!this.pendingLabel,
+      landmark: false,
     }
     this.polygons.push(newPoly)
 
@@ -789,19 +957,15 @@ export class SpineAnnotator {
   // 자동 라벨 할당 (Y좌표 위→아래)
   // ============================================================
   relabelAll() {
-    // 무게중심 Y좌표 계산
-    this.polygons.forEach(p => {
-      p._centroidY = computeCentroidY(p.points)
-    })
-    // 위에서 아래 순서로 정렬
-    this.polygons.sort((a, b) => a._centroidY - b._centroidY)
-    // 시작 라벨부터 할당
-    const labels = generateLabels(this.startLabel, this.polygons.length)
-    this.polygons.forEach((p, i) => {
-      p.label = labels[i]
-    })
-  }
+    const autoPolygons = this.polygons.filter(p => !p.manualLabel && (!p.label || isSpineLabel(p.label) || String(p.label).startsWith('?')))
+    autoPolygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
+    autoPolygons.sort((a, b) => a._centroidY - b._centroidY)
+    const labels = generateLabels(this.startLabel, autoPolygons.length)
+    autoPolygons.forEach((p, i) => { p.label = labels[i] })
 
+    this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
+    this.polygons.sort((a, b) => a._centroidY - b._centroidY)
+  }
   setStartLabel(label) {
     this.startLabel = label
     this.relabelAll()
@@ -809,16 +973,51 @@ export class SpineAnnotator {
     this.notifyPolygons()
   }
 
-  setLabelForPolygon(id, newLabel) {
+  setLabelForPolygon(id, newLabel, opts = {}) {
     const poly = this.polygons.find(p => p.id === id)
     if (!poly) return
+
+    if (isExtraLabel(newLabel)) {
+      poly.label = newLabel
+      poly.manualLabel = true
+      poly.landmark = isPelvisPointLabel(newLabel) || poly.landmark === true
+      this.renderPolygons()
+      this.pushHistory()
+      this.notifyPolygons()
+      return
+    }
+
+    const cascade = opts.cascade !== false
+    if (cascade) {
+      this.relabelFromPolygon(id, newLabel)
+      return
+    }
+
     poly.label = newLabel
-    // 수동 변경 시 자동 정렬은 안 함 (사용자 의도 존중)
+    poly.manualLabel = true
     this.renderPolygons()
     this.pushHistory()
     this.notifyPolygons()
   }
 
+  relabelFromPolygon(id, startLabel) {
+    const idxInLabelSet = LABELS.indexOf(startLabel)
+    if (idxInLabelSet === -1) return
+    this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
+    this.polygons.sort((a, b) => a._centroidY - b._centroidY)
+    const startIdx = this.polygons.findIndex(p => p.id === id)
+    if (startIdx === -1) return
+    const editable = this.polygons.slice(startIdx).filter(p => !isExtraLabel(p.label))
+    const labels = generateLabels(startLabel, editable.length)
+    editable.forEach((p, i) => {
+      p.label = labels[i]
+      p.manualLabel = true
+    })
+    if (startIdx === 0) this.startLabel = startLabel
+    this.renderPolygons()
+    this.pushHistory()
+    this.notifyPolygons()
+  }
   // ============================================================
   // 폴리곤 렌더링
   // ============================================================
@@ -828,6 +1027,7 @@ export class SpineAnnotator {
     // → 매 렌더 직전에 호버 상태를 비워서 새 vertex의 mouseenter가 다시 잡도록 한다.
     this.hoveringVertex = null
     this.polyLayer.destroyChildren()
+    this.polyLayer.visible(this.humanLabelVisible !== false)
 
     this.polygons.forEach(poly => {
       const color = getRegionColor(poly.label)
@@ -844,7 +1044,17 @@ export class SpineAnnotator {
         closed: true,
         polyId: poly.id,
       })
-      group.add(shape)
+      // VISIBILITY_MODULE_FINAL_OUTLINE: line/name toggle hides outline only.
+      // Mask fill stays visible until humanLabelVisible hides the full polyLayer.
+      if (this.labelOverlayVisible === false) {
+        shape.strokeEnabled(false)
+        shape.strokeWidth(0)
+      } else {
+        shape.strokeEnabled(true)
+        shape.stroke(color)
+        shape.strokeWidth((isSelected ? 3 : 2) / this.stage.scaleX())
+      }
+            group.add(shape)
 
       // 라벨 텍스트 — 폴리곤 크기에 비례
       // 1) 폴리곤 bounding box로 라벨 크기 결정
@@ -861,7 +1071,7 @@ export class SpineAnnotator {
       const fontScreenPx = Math.max(7, Math.min(13, polyScreenMin * 0.22))
 
       // 폴리곤이 화면에서 너무 작으면 (16px 이하) 라벨 숨김. 단 선택된 것은 항상 표시
-      const showLabel = polyScreenMin >= 16 || isSelected
+            const showLabel = (this.labelOverlayVisible !== false) && (polyScreenMin >= 16 || isSelected)
 
       // 라벨 노드는 dragmove에서 위치 갱신해야 하므로 outer-scope에 선언
       // (showLabel=false면 null로 남고, dragmove는 null 체크 후 스킵)
@@ -1107,6 +1317,8 @@ export class SpineAnnotator {
       id: p.id,
       label: p.label,
       points: p.points.slice(),
+      manualLabel: p.manualLabel === true,
+      landmark: p.landmark === true,
       selected: p.id === this.selectedId,
     }))
   }
@@ -1121,14 +1333,42 @@ export class SpineAnnotator {
       id: p.id != null ? p.id : (Date.now() + i),
       label: p.label || '',
       points: Array.isArray(p.points) ? p.points.slice() : [],
+      manualLabel: p.manualLabel === true || isExtraLabel(p.label),
+      landmark: p.landmark === true || isPelvisPointLabel(p.label),
     }))
     this.selectedId = null
-    this.relabelAll()
+    // Keep manually saved labels if they exist. Only auto-label imported/legacy
+    // polygons that do not have labels yet.
+    const hasMissingLabel = this.polygons.some(p => !p.label || p.label === '?')
+    if (hasMissingLabel) {
+      this.relabelAll()
+    } else {
+      this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
+      this.polygons.sort((a, b) => a._centroidY - b._centroidY)
+    }
     this.renderPolygons()
+    this.refreshPolygonVisualScale({ delayed: true })
     // 새 이미지에 대한 히스토리는 깨끗하게 시작
     this.history = [this.snapshot()]
     this.historyIdx = 0
     this.notifyPolygons()
+  }
+
+  refreshPolygonVisualScale(opts = {}) {
+    if (!this.stage || !Array.isArray(this.polygons) || this.polygons.length === 0) return
+    const run = () => {
+      if (!this.stage || !this.polyLayer) return
+      this.renderPolygons()
+      this.polyLayer.batchDraw()
+    }
+    if (opts.delayed && typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        run()
+        requestAnimationFrame(run)
+      })
+    } else {
+      run()
+    }
   }
 
   notifyPolygons() {
@@ -1157,6 +1397,8 @@ export class SpineAnnotator {
       id: p.id,
       label: p.label,
       points: p.points.slice(),
+      manualLabel: p.manualLabel === true,
+      landmark: p.landmark === true,
     })))
   }
 

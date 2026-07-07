@@ -169,6 +169,24 @@ export async function deleteLabel(filename) {
   return apiFetch(`/api/labels/${encodeURIComponent(filename)}`, { method: 'DELETE' })
 }
 
+/** 파일별 메모 로드 */
+export async function loadNote(filename) {
+  return apiFetch('/api/notes/' + encodeURIComponent(filename))
+}
+
+/** 파일별 메모 저장 */
+export async function saveNote(filename, payload) {
+  return apiFetch('/api/notes/' + encodeURIComponent(filename), {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 전체 메모 별도 내보내기 */
+export async function exportNotes() {
+  return apiFetch('/api/notes/export')
+}
+
 /**
  * 일괄 내보내기
  * @param {Object} filters - {format, view, labeler, min_polygons}
