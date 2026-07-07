@@ -322,6 +322,13 @@ async function postAuthInit() {
     viewType: state.viewType,
     landmarks: state.annotator?.getLandmarks?.() || [],
   })
+  initPelvisLabelControls()
+  initRightSidebarCompactUI()
+  renderSagittalMeasurementPanel([], {
+    filename: state.filename,
+    viewType: state.viewType,
+    landmarks: state.annotator?.getLandmarks?.() || [],
+  })
   console.log('[App] Ready.')
   ensurePelvisPanelCollapseHardFix() // PELVIS_PANEL_COLLAPSE_HARD_CALL_READY
 }
@@ -1774,6 +1781,7 @@ async function loadSampleImage() {
   // 샘플 X-ray 이미지를 로드 (외부 의료 영상 샘플)
   const sampleUrl = '/static/sample-spine.png'
   state.currentImageUrl = sampleUrl
+  state.currentImageUrl = sampleUrl
   state.filename = 'sample_00000000_AP.png'
   resetLandmarksForFileSwitch()
   state.viewType = 'AP'
@@ -1819,6 +1827,8 @@ function updateFileInfo() {
   state.imageWidth = state.annotator.imageWidth
   state.imageHeight = state.annotator.imageHeight
   renderAiRegionControls()
+  renderAiRegionControls()
+  loadCurrentNoteFromModule().catch(err => console.warn('Note load failed:', err))
   loadCurrentNoteFromModule().catch(err => console.warn('Note load failed:', err))
 }
 
@@ -1849,6 +1859,14 @@ function handlePolygonsChange(polygons) {
       list.appendChild(item)
     })
   }
+
+  renderSagittalMeasurementPanel([], {
+    filename: state.filename,
+    viewType: state.viewType,
+    landmarks: state.annotator?.getLandmarks?.() || [],
+  })
+
+  refreshSagittalMeasurements()
 
   renderSagittalMeasurementPanel([], {
     filename: state.filename,

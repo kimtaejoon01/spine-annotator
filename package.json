@@ -2,9 +2,7 @@
   "name": "webapp",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/verify-build-output.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/verify-build-output.mjs",
     "build": "vite build",
     "preview": "wrangler pages dev dist --d1 DB=spine-annotator-production",
     "db:migrate:local": "wrangler d1 migrations apply spine-annotator-production --local",

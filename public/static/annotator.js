@@ -1133,7 +1133,7 @@ export class SpineAnnotator {
       const fontScreenPx = Math.max(7, Math.min(13, polyScreenMin * 0.22))
 
       // 폴리곤이 화면에서 너무 작으면 (16px 이하) 라벨 숨김. 단 선택된 것은 항상 표시
-            const showLabel = (this.humanLabelVisible !== false) && (this.labelOverlayVisible !== false) && (polyScreenMin >= 16 || isSelected)
+                  const showLabel = (this.humanLabelVisible !== false) && (this.labelOverlayVisible !== false) && (polyScreenMin >= 16 || isSelected)
 
       // 라벨 노드는 dragmove에서 위치 갱신해야 하므로 outer-scope에 선언
       // (showLabel=false면 null로 남고, dragmove는 null 체크 후 스킵)

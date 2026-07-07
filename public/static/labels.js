@@ -38,7 +38,7 @@ export function isExtraLabel(label) {
 }
 
 export function isPelvisPointLabel(label) {
-  return label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT'
+  return label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT' || label === 'HC_LAT'
 }
 
 export function getRegionColor(label) {
