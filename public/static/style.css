@@ -2488,3 +2488,21 @@ kbd {
 .pp-slider-label b { color: var(--text-primary, #e6edf3); }
 .pp-slider-row input[type="range"] { width: 100%; }
 .pp-hint { font-size: 11px; color: var(--text-muted, #768390); padding: 2px 0; }
+
+/* ================= 폴리곤 자동 측정 UI ================= */
+.ae-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.ae-run, .ae-csv {
+  padding: 5px 10px; font-size: 12px; cursor: pointer; border-radius: 6px;
+  border: 1px solid var(--border-color, #30363d);
+  background: var(--bg-tertiary, #21262d); color: var(--text-primary, #e6edf3);
+}
+.ae-run:hover, .ae-csv:hover:not(:disabled) { background: var(--bg-elevated, #2d333b); }
+.ae-csv:disabled { opacity: .5; cursor: default; }
+.ae-chk { font-size: 11px; color: var(--text-secondary, #adbac7); display: flex; align-items: center; gap: 4px; }
+.ae-status { font-size: 11px; color: var(--text-muted, #768390); min-height: 14px; margin-bottom: 4px; }
+.ae-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.ae-table td { padding: 2px 4px; border-bottom: 1px solid var(--border-color, #30363d); color: var(--text-secondary, #adbac7); }
+.ae-table .ae-val { text-align: right; color: var(--text-primary, #e6edf3); font-variant-numeric: tabular-nums; font-weight: 600; }
+.ae-range { color: var(--text-muted, #768390); font-size: 10px; }
+.ae-details { margin-top: 6px; }
+.ae-details summary { font-size: 11px; color: var(--text-secondary, #adbac7); cursor: pointer; }

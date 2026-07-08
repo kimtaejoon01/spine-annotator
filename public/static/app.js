@@ -10,6 +10,7 @@ import { renderSagittalMeasurementPanel } from './measurements.js'
 import { initNotesModule, loadCurrentNote as loadCurrentNoteFromModule } from './modules/notes.js'
 import { initVisibilityControls, refreshVisibilityControls } from './modules/visibility.js'
 import { initPreprocessUI } from './preprocess-ui.js'
+import { initAutoEndplateUI } from './auto-endplate-ui.js'
 import {
   ACTIONS,
   normalizeKey,
@@ -222,6 +223,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // 전처리 뷰 UI 초기화 (프리셋 토글 + 파라미터 패널)
   try { initPreprocessUI(state.annotator) } catch (e) { console.error('preprocess UI init 실패', e) }
+
+  // 폴리곤 자동 측정 UI 초기화
+  try { initAutoEndplateUI(state.annotator) } catch (e) { console.error('auto-endplate UI init 실패', e) }
 
   installPelvisRuntimeFinalFixes()
 

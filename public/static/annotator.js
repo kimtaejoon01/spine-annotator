@@ -215,6 +215,42 @@ export class SpineAnnotator {
   }
 
   // ============================================================
+  // 폴리곤 자동 측정 오버레이 (상/하 종판선 + 4코너)
+  // 이미지 좌표로 그리며 stage 변환(줌/팬)을 그대로 따라간다.
+  // ============================================================
+  clearAutoEndplateOverlay() {
+    if (this._autoEndplateGroup) { this._autoEndplateGroup.destroy(); this._autoEndplateGroup = null }
+    if (this.measurementLayer) this.measurementLayer.batchDraw()
+  }
+
+  drawAutoEndplateOverlay(items) {
+    if (!this.measurementLayer || !window.Konva) return
+    this.clearAutoEndplateOverlay()
+    const K = window.Konva
+    const g = new K.Group({ listening: false })
+    const line = (a, b, color) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2, listening: false })
+    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: 3, fill: color, listening: false })
+    for (const it of (items || [])) {
+      const { SA, SP, IA, IP } = it
+      if (SA && SP) g.add(line(SA, SP, '#39d353'))   // 상종판(초록)
+      if (IA && IP) g.add(line(IA, IP, '#e3a008'))   // 하종판(주황)
+      if (SA) g.add(dot(SA, '#f85149'))
+      if (SP) g.add(dot(SP, '#f0e442'))
+      if (IA) g.add(dot(IA, '#d946ef'))
+      if (IP) g.add(dot(IP, '#ffffff'))
+      const corners = [SA, SP, IA, IP].filter(Boolean)
+      if (it.label && corners.length) {
+        const cx = corners.reduce((s, p) => s + p[0], 0) / corners.length
+        const cy = corners.reduce((s, p) => s + p[1], 0) / corners.length
+        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: 12, fill: '#ffd43b', listening: false }))
+      }
+    }
+    this._autoEndplateGroup = g
+    this.measurementLayer.add(g)
+    this.measurementLayer.batchDraw()
+  }
+
+  // ============================================================
   // 오버레이 표시 / AI mask
   // ============================================================
   setHumanLabelVisible(visible) {
