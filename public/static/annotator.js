@@ -88,12 +88,14 @@ export class SpineAnnotator {
     this.polyLayer = new Konva.Layer()
     this.previewLayer = new Konva.Layer()
     this.measurementLayer = new Konva.Layer({ listening: false })
+    this.autoEndplateLayer = new Konva.Layer({ listening: false }) // 자동측정 종판선 전용 (다른 시스템이 못 지우게)
 
     this.stage.add(this.imageLayer)
     this.stage.add(this.aiMaskLayer)
     this.stage.add(this.polyLayer)
     this.stage.add(this.previewLayer)
     this.stage.add(this.measurementLayer)
+    this.stage.add(this.autoEndplateLayer)
 
     // 리사이즈 대응
     window.addEventListener('resize', () => this.resize())
@@ -220,11 +222,11 @@ export class SpineAnnotator {
   // ============================================================
   clearAutoEndplateOverlay() {
     if (this._autoEndplateGroup) { this._autoEndplateGroup.destroy(); this._autoEndplateGroup = null }
-    if (this.measurementLayer) this.measurementLayer.batchDraw()
+    if (this.autoEndplateLayer) this.autoEndplateLayer.batchDraw()
   }
 
   drawAutoEndplateOverlay(items) {
-    if (!this.measurementLayer || !window.Konva) return
+    if (!this.autoEndplateLayer || !window.Konva) return
     this.clearAutoEndplateOverlay()
     const K = window.Konva
     const g = new K.Group({ listening: false })
@@ -257,8 +259,8 @@ export class SpineAnnotator {
       }
     }
     this._autoEndplateGroup = g
-    this.measurementLayer.add(g)
-    this.measurementLayer.batchDraw()
+    this.autoEndplateLayer.add(g)
+    this.autoEndplateLayer.batchDraw()
   }
 
   // ============================================================
