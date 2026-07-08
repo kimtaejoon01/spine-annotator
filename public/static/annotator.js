@@ -228,21 +228,32 @@ export class SpineAnnotator {
     this.clearAutoEndplateOverlay()
     const K = window.Konva
     const g = new K.Group({ listening: false })
-    const line = (a, b, color) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2, listening: false })
-    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: 3, fill: color, listening: false })
+    const s = (this.stage && this.stage.scaleX()) || 1   // 현재 줌 배율
+    const dotR = 4 / s                                    // 화면상 ~4px 유지
+    const fontPx = 13 / s
+    // 종판선은 줌과 무관하게 항상 보이도록 strokeScaleEnabled:false 사용
+    const endplateLine = (a, b, color) => {
+      // 코너-코너 선을 양쪽으로 25% 연장해 종판이 잘 보이게
+      const dx = b[0] - a[0], dy = b[1] - a[1]
+      const ext = 0.25
+      const p1 = [a[0] - dx * ext, a[1] - dy * ext]
+      const p2 = [b[0] + dx * ext, b[1] + dy * ext]
+      return new K.Line({ points: [p1[0], p1[1], p2[0], p2[1]], stroke: color, strokeWidth: 2.5, strokeScaleEnabled: false, listening: false })
+    }
+    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: dotR, fill: color, stroke: '#000', strokeWidth: 0.5, strokeScaleEnabled: false, listening: false })
     for (const it of (items || [])) {
       const { SA, SP, IA, IP } = it
-      if (SA && SP) g.add(line(SA, SP, '#39d353'))   // 상종판(초록)
-      if (IA && IP) g.add(line(IA, IP, '#e3a008'))   // 하종판(주황)
+      if (SA && SP) g.add(endplateLine(SA, SP, '#39d353'))   // 상종판(초록)
+      if (IA && IP) g.add(endplateLine(IA, IP, '#e3a008'))   // 하종판(주황)
       if (SA) g.add(dot(SA, '#f85149'))
       if (SP) g.add(dot(SP, '#f0e442'))
       if (IA) g.add(dot(IA, '#d946ef'))
       if (IP) g.add(dot(IP, '#ffffff'))
       const corners = [SA, SP, IA, IP].filter(Boolean)
       if (it.label && corners.length) {
-        const cx = corners.reduce((s, p) => s + p[0], 0) / corners.length
-        const cy = corners.reduce((s, p) => s + p[1], 0) / corners.length
-        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: 12, fill: '#ffd43b', listening: false }))
+        const cx = corners.reduce((a, p) => a + p[0], 0) / corners.length
+        const cy = corners.reduce((a, p) => a + p[1], 0) / corners.length
+        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: fontPx, fill: '#ffd43b', listening: false }))
       }
     }
     this._autoEndplateGroup = g

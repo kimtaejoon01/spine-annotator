@@ -199,7 +199,7 @@ function ensurePanel() {
   if (!mount) {
     mount = document.createElement('div')
     mount.id = 'preprocessPanelMount'
-    const sb = document.getElementById('sidebarLeft') || document.body
+    const sb = document.querySelector('#sidebarLeft .sidebar-scroll') || document.getElementById('sidebarLeft') || document.body
     sb.appendChild(mount)
   }
   if (mount.dataset.ready === '1') return mount
