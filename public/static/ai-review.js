@@ -197,8 +197,8 @@ function groupByBase(files) {
 }
 
 function parseAiMaskFile(name, relPath = name) {
-  const noExt = name.replace(/.(png|jpg|jpeg|webp|bmp)$/i, '')
-  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>vd+)$/i)
+  const noExt = name.replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '')
+  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>v\d+)$/i)
   if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, m.groups.version)
   m = noExt.match(/^(?<base>.+)_(?<region>cervical|lumbar)_(?<model>.+)_binary_full$/i)
   if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, 'v0')
@@ -229,7 +229,7 @@ function normalizeAiMeta(base, region, model, version) {
   return { base, region: String(region).toLowerCase(), model: slug(model), version: String(version || 'v0').toLowerCase(), modelKey }
 }
 function slug(s) { return String(s).normalize('NFKC').replace(/^[A-Z]_/, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').toLowerCase() }
-function imageBase(name) { return String(name || '').replace(/.(png|jpg|jpeg|webp|bmp)$/i, '') }
+function imageBase(name) { return String(name || '').replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '') }
 
 function renderImageList() {
   const ul = document.getElementById('reviewImageList')

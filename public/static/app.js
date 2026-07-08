@@ -1261,8 +1261,8 @@ async function listAiMaskFilesRecursive(dirHandle, prefix = '') {
   return out
 }
 function parseAiMaskFile(name, relPath = name) {
-  const noExt = name.replace(/.(png|jpg|jpeg|webp|bmp)$/i, '')
-  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>vd+)$/i)
+  const noExt = name.replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '')
+  let m = noExt.match(/^(?<base>.+)_AIresult_(?<region>cervical|thoracic|lumbar)_(?<model>.+)_(?<version>v\d+)$/i)
   if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, m.groups.version)
   m = noExt.match(/^(?<base>.+)_(?<region>cervical|lumbar)_(?<model>.+)_binary_full$/i)
   if (m) return normalizeAiMeta(m.groups.base, m.groups.region, m.groups.model, 'v0')
@@ -1280,7 +1280,7 @@ function normalizeAiMeta(base, region, model, version) {
 function slugAiName(name) {
   return String(name).normalize('NFKC').replace(/^[A-Z]_/, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').toLowerCase()
 }
-function imageBaseName(filename) { return String(filename || '').replace(/.(png|jpg|jpeg|webp|bmp)$/i, '') }
+function imageBaseName(filename) { return String(filename || '').replace(/\.(png|jpg|jpeg|webp|bmp)$/i, '') }
 function getAiCandidatesForCurrentFile() { return state.aiByBase.get(imageBaseName(state.filename)) || [] }
 function renderAiRegionControls() {
   const container = document.getElementById('aiRegionControls')
@@ -3277,14 +3277,14 @@ function initPelvisLabelControls() {
   panel.innerHTML = `
     <h3 class="panel-title"><i class="fas fa-location-dot"></i> 골반 라벨</h3>
     <div class="pelvis-label-grid">
-      <button type="button" class="pelvis-label-btn" data-label="FH_L" data-mode="polygon">FH_L</button>
-      <button type="button" class="pelvis-label-btn" data-label="FH_R" data-mode="polygon">FH_R</button>
+      <button type="button" class="pelvis-label-btn" data-label="FH_L" data-mode="circle">FH_L</button>
+      <button type="button" class="pelvis-label-btn" data-label="FH_R" data-mode="circle">FH_R</button>
       <button type="button" class="pelvis-label-btn" data-label="HC_L" data-mode="point">HC_L 점</button>
       <button type="button" class="pelvis-label-btn" data-label="HC_R" data-mode="point">HC_R 점</button>
-      <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="polygon">FH_LAT</button>
+      <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="circle">FH_LAT</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="HC_LAT" data-mode="point">HC_LAT 점</button>
     </div>
-    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 폴리곤, HC는 점 클릭입니다.</p>
+    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 중심 클릭(드래그로 크기 조절), HC는 점 클릭입니다.</p>
   `
 
   const labelPanel = document.getElementById('labelList')?.closest('.panel')
@@ -3297,6 +3297,7 @@ function initPelvisLabelControls() {
     btn.addEventListener('click', () => {
       panel.querySelectorAll('.pelvis-label-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
+      state.annotator.setTool && state.annotator.setTool('draw')
       state.annotator.setPendingLabel(btn.dataset.label, btn.dataset.mode)
       if (btn.dataset.mode === 'point') {
         // point mode clears after the next canvas click from runtime guard

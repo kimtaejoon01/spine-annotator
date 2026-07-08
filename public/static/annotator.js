@@ -633,6 +633,20 @@ export class SpineAnnotator {
       // 마우스를 누르고 있을 필요가 없도록 여기서는 일반 클릭 점 추가를 막습니다.
       if (this.freehandMode) return
 
+      // 원(circle) 모드: 누른 지점이 중심. 드래그로 반경, 그냥 클릭이면 기본 반경.
+      if (this.pendingLabel && this.pendingLabelMode === 'circle' && !this.drawing) {
+        const scale = this.stage.scaleX() || 1
+        this._circle = { cx: pos.x, cy: pos.y }
+        this._circlePreview = new Konva.Circle({
+          x: pos.x, y: pos.y, radius: 0,
+          stroke: getRegionColor(this.pendingLabel), strokeWidth: 2 / scale,
+          dash: [6 / scale, 4 / scale], listening: false,
+        })
+        this.previewLayer.add(this._circlePreview)
+        this.previewLayer.batchDraw()
+        return
+      }
+
       this.addPoint(pos.x, pos.y)
     } else if (this.tool === 'edit') {
       // 좌클릭만 처리 (우클릭은 점 삭제용 contextmenu)
@@ -660,11 +674,44 @@ export class SpineAnnotator {
   }
 
   onMouseUp(e) {
+    // 원(circle) 모드 마무리: 반경 확정 후 원을 폴리곤으로 생성
+    if (this._circle) {
+      const pos = this.getImagePos()
+      const scale = this.stage.scaleX() || 1
+      let r = pos ? Math.hypot(pos.x - this._circle.cx, pos.y - this._circle.cy) : 0
+      const defR = Math.max(15, Math.min(this.imageWidth || 400, this.imageHeight || 400) * 0.04)
+      if (r < 4 / scale) r = defR // 드래그 거의 없으면 기본 반경
+      const N = 32, pts = []
+      for (let i = 0; i < N; i++) {
+        const a = (2 * Math.PI * i) / N
+        pts.push(this._circle.cx + r * Math.cos(a), this._circle.cy + r * Math.sin(a))
+      }
+      this.polygons.push({
+        id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
+        manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
+      })
+      if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
+      this._circle = null
+      this.renderPolygons()
+      this.pushHistory()
+      this.notifyPolygons()
+      this.updateStatus?.()
+      return
+    }
     // 자유곡선은 이제 마우스 버튼을 누르고 있을 필요가 없으므로 별도 처리 없음
   }
 
   onMouseMove(e) {
     const pos = this.getImagePos()
+
+    // 원(circle) 모드: 중심에서 커서까지 거리를 반경으로 미리보기
+    if (this._circle && this._circlePreview) {
+      if (!pos) return
+      const r = Math.hypot(pos.x - this._circle.cx, pos.y - this._circle.cy)
+      this._circlePreview.radius(r)
+      this.previewLayer.batchDraw()
+      return
+    }
 
     // S 자유곡선 모드: 마우스 버튼을 누르지 않고 이동만 해도 일정 간격마다 점 추가
     if (this.tool === 'draw' && this.freehandMode && !this.panMode) {
