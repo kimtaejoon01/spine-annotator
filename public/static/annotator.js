@@ -275,10 +275,10 @@ export class SpineAnnotator {
   setHumanLabelVisible(visible) {
     this.humanLabelVisible = visible !== false
     window.__spineHumanLabelVisible = this.humanLabelVisible
-    if (this.polyLayer) this.polyLayer.visible(this.humanLabelVisible !== false)
+    if (this.polyLayer) this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
     this.renderPolygons()
     if (this.polyLayer) {
-      this.polyLayer.visible(this.humanLabelVisible !== false)
+      this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
       this.polyLayer.batchDraw()
     }
   }
@@ -1224,7 +1224,7 @@ export class SpineAnnotator {
     // → 매 렌더 직전에 호버 상태를 비워서 새 vertex의 mouseenter가 다시 잡도록 한다.
     this.hoveringVertex = null
     this.polyLayer.destroyChildren()
-    this.polyLayer.visible(this.humanLabelVisible !== false)
+    this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
 
     this.polygons.forEach(poly => {
       const color = getRegionColor(poly.label)
@@ -1647,7 +1647,7 @@ export class SpineAnnotator {
       this.renderPolygons()
       // 줌 재렌더가 '사람 라벨 보기' 숨김을 되돌리지 않도록 체크박스 실제 상태를 재적용
       const humanChk = document.getElementById('toggleLabelOverlay')
-      if (humanChk && this.polyLayer) this.polyLayer.visible(humanChk.checked)
+      if (humanChk && this.polyLayer) this.polyLayer.visible(humanChk.checked && (this.__activeAnnotationMode || 'polygon') === 'polygon')
       this.polyLayer.batchDraw()
       this.redrawAutoEndplate?.()  // 줌 등으로 재렌더될 때 종판선 오버레이도 다시 그림
     }

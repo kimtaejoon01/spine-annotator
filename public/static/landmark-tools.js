@@ -30,7 +30,9 @@ export function installLat5PointLandmarks({ annotator, getViewType, onChange } =
   function updateModeVisibility() {
     const polygonMode = getDisplayMode() === 'polygon'
     if (polygonMode) {
-      showLayer(annotator.polyLayer); showLayer(annotator.previewLayer); showLayer(annotator.measurementLayer); hideLayer(annotator.landmarkLayer)
+      const __humanChk = document.getElementById('toggleLabelOverlay'); const __humanOn = !__humanChk || __humanChk.checked;
+      if (__humanOn) showLayer(annotator.polyLayer); else hideLayer(annotator.polyLayer)
+      showLayer(annotator.previewLayer); showLayer(annotator.measurementLayer); hideLayer(annotator.landmarkLayer)
     } else {
       hideLayer(annotator.polyLayer); hideLayer(annotator.previewLayer); annotator.renderMeasurementDebugOverlay?.(); if (annotator.measurementDebug?.enabled && annotator.measurementDebug?.result?.debug) showLayer(annotator.measurementLayer); else hideLayer(annotator.measurementLayer); showLayer(annotator.landmarkLayer); annotator.landmarkLayer?.moveToTop?.()
     }
