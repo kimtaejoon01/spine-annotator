@@ -243,9 +243,12 @@ export class SpineAnnotator {
     if (!items) { this.autoEndplateLayer.batchDraw(); return }
     const K = window.Konva
     const g = new K.Group({ listening: false })
-    // 처음 버전과 동일: 줌에 따라 함께 스케일되는 두께/크기(strokeScaleEnabled 기본값)
+    const s = (this.stage && this.stage.scaleX()) || 1
+    const dotR = 3.5 / s   // 화면상 항상 ~3.5px (줌마다 재계산되어 커지지 않음)
+    const fontPx = 12 / s
+    // 선 두께는 줌에 따라 함께 스케일되는 기본값(처음 버전)
     const line = (a, b, color) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2, listening: false })
-    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: 3, fill: color, listening: false })
+    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: dotR, fill: color, listening: false })
     for (const it of items) {
       const { SA, SP, IA, IP } = it
       if (SA && SP) g.add(line(SA, SP, '#39d353'))   // 상종판(초록)
@@ -258,7 +261,7 @@ export class SpineAnnotator {
       if (it.label && corners.length) {
         const cx = corners.reduce((a, p) => a + p[0], 0) / corners.length
         const cy = corners.reduce((a, p) => a + p[1], 0) / corners.length
-        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: 12, fill: '#ffd43b', listening: false }))
+        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: fontPx, fill: '#ffd43b', listening: false }))
       }
     }
     this._autoEndplateGroup = g
