@@ -221,32 +221,35 @@ export class SpineAnnotator {
   // 이미지 좌표로 그리며 stage 변환(줌/팬)을 그대로 따라간다.
   // ============================================================
   clearAutoEndplateOverlay() {
+    this._autoEndplateItems = null
     if (this._autoEndplateGroup) { this._autoEndplateGroup.destroy(); this._autoEndplateGroup = null }
     if (this.autoEndplateLayer) this.autoEndplateLayer.batchDraw()
   }
 
   drawAutoEndplateOverlay(items) {
+    this._autoEndplateItems = items || null
+    this._renderAutoEndplate()
+  }
+
+  // 줌 후 등 다시 그릴 때 (저장된 items로 재렌더)
+  redrawAutoEndplate() {
+    if (this._autoEndplateItems) this._renderAutoEndplate()
+  }
+
+  _renderAutoEndplate() {
     if (!this.autoEndplateLayer || !window.Konva) return
-    this.clearAutoEndplateOverlay()
+    if (this._autoEndplateGroup) { this._autoEndplateGroup.destroy(); this._autoEndplateGroup = null }
+    const items = this._autoEndplateItems
+    if (!items) { this.autoEndplateLayer.batchDraw(); return }
     const K = window.Konva
     const g = new K.Group({ listening: false })
-    const s = (this.stage && this.stage.scaleX()) || 1   // 현재 줌 배율
-    const dotR = 4 / s                                    // 화면상 ~4px 유지
-    const fontPx = 13 / s
-    // 종판선은 줌과 무관하게 항상 보이도록 strokeScaleEnabled:false 사용
-    const endplateLine = (a, b, color) => {
-      // 코너-코너 선을 양쪽으로 25% 연장해 종판이 잘 보이게
-      const dx = b[0] - a[0], dy = b[1] - a[1]
-      const ext = 0.25
-      const p1 = [a[0] - dx * ext, a[1] - dy * ext]
-      const p2 = [b[0] + dx * ext, b[1] + dy * ext]
-      return new K.Line({ points: [p1[0], p1[1], p2[0], p2[1]], stroke: color, strokeWidth: 2.5, strokeScaleEnabled: false, listening: false })
-    }
-    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: dotR, fill: color, stroke: '#000', strokeWidth: 0.5, strokeScaleEnabled: false, listening: false })
-    for (const it of (items || [])) {
+    // 처음 버전과 동일: 줌에 따라 함께 스케일되는 두께/크기(strokeScaleEnabled 기본값)
+    const line = (a, b, color) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2, listening: false })
+    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: 3, fill: color, listening: false })
+    for (const it of items) {
       const { SA, SP, IA, IP } = it
-      if (SA && SP) g.add(endplateLine(SA, SP, '#39d353'))   // 상종판(초록)
-      if (IA && IP) g.add(endplateLine(IA, IP, '#e3a008'))   // 하종판(주황)
+      if (SA && SP) g.add(line(SA, SP, '#39d353'))   // 상종판(초록)
+      if (IA && IP) g.add(line(IA, IP, '#e3a008'))   // 하종판(주황)
       if (SA) g.add(dot(SA, '#f85149'))
       if (SP) g.add(dot(SP, '#f0e442'))
       if (IA) g.add(dot(IA, '#d946ef'))
@@ -255,7 +258,7 @@ export class SpineAnnotator {
       if (it.label && corners.length) {
         const cx = corners.reduce((a, p) => a + p[0], 0) / corners.length
         const cy = corners.reduce((a, p) => a + p[1], 0) / corners.length
-        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: fontPx, fill: '#ffd43b', listening: false }))
+        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: 12, fill: '#ffd43b', listening: false }))
       }
     }
     this._autoEndplateGroup = g
@@ -1582,6 +1585,7 @@ export class SpineAnnotator {
       if (!this.stage || !this.polyLayer) return
       this.renderPolygons()
       this.polyLayer.batchDraw()
+      this.redrawAutoEndplate?.()  // 줌 등으로 재렌더될 때 종판선 오버레이도 다시 그림
     }
     if (opts.delayed && typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => {
