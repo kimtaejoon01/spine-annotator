@@ -1587,6 +1587,9 @@ export class SpineAnnotator {
     const run = () => {
       if (!this.stage || !this.polyLayer) return
       this.renderPolygons()
+      // 줌 재렌더가 '사람 라벨 보기' 숨김을 되돌리지 않도록 체크박스 실제 상태를 재적용
+      const humanChk = document.getElementById('toggleLabelOverlay')
+      if (humanChk && this.polyLayer) this.polyLayer.visible(humanChk.checked)
       this.polyLayer.batchDraw()
       this.redrawAutoEndplate?.()  // 줌 등으로 재렌더될 때 종판선 오버레이도 다시 그림
     }
