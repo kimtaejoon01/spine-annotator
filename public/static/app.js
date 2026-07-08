@@ -1754,6 +1754,7 @@ function runAction(actionId) {
     case 'cancelDrawing': state.annotator.cancelDrawing(); return true
     case 'removeLastPoint':
       if (landmarkMode) return !!state.annotator.deleteLastLandmarkPoint?.()
+      if (state.annotator.cancelOrDeleteLastCircle?.()) return true
       state.annotator.removeLastPoint()
       return true
     case 'deleteSelected':
@@ -3295,15 +3296,25 @@ function initPelvisLabelControls() {
 
   panel.querySelectorAll('.pelvis-label-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      // 그리던 원이 있으면 먼저 취소
+      state.annotator._clearCirclePreview && state.annotator._clearCirclePreview()
+      const wasActive = btn.classList.contains('active')
       panel.querySelectorAll('.pelvis-label-btn').forEach(b => b.classList.remove('active'))
+      if (wasActive) {
+        // 같은 버튼 재클릭 → 모드 취소, 기본 폴리곤 모드로
+        state.annotator.setPendingLabel(null, 'polygon')
+        return
+      }
       btn.classList.add('active')
       state.annotator.setTool && state.annotator.setTool('draw')
       state.annotator.setPendingLabel(btn.dataset.label, btn.dataset.mode)
-      if (btn.dataset.mode === 'point') {
-        // point mode clears after the next canvas click from runtime guard
-      }
     })
   })
+  // 원(FH) 완성 시 → 버튼 활성 해제 (annotator가 이벤트 발생)
+  if (!window.__spineCircleCommitBound) {
+    window.__spineCircleCommitBound = true
+    window.addEventListener('spine:circle-committed', () => clearPelvisLabelActiveButtonsFinal())
+  }
 }
 
 

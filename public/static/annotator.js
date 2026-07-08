@@ -697,10 +697,14 @@ export class SpineAnnotator {
       manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
     })
     this._clearCirclePreview()
+    // 원 완성 후 기본 폴리곤 모드로 복귀 (다음 클릭이 실수로 원이 되지 않도록)
+    this.pendingLabel = null
+    this.pendingLabelMode = 'polygon'
     this.renderPolygons()
     this.pushHistory()
     this.notifyPolygons()
     this.updateStatus?.()
+    try { window.dispatchEvent(new CustomEvent('spine:circle-committed')) } catch (e) {}
   }
 
   _clearCirclePreview() {
@@ -708,6 +712,12 @@ export class SpineAnnotator {
     if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
     this._circleFirst = null
     if (this.previewLayer) this.previewLayer.batchDraw()
+  }
+
+  // 'E'(마지막 점 취소) — FH 원: 그리는 중인 원만 취소. 완성된 원 삭제는 P(삭제 모드) 담당.
+  cancelOrDeleteLastCircle() {
+    if (this._circleFirst) { this._clearCirclePreview(); return true }
+    return false
   }
 
   onMouseMove(e) {
