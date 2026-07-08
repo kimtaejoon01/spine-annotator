@@ -3284,7 +3284,7 @@ function initPelvisLabelControls() {
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="circle">FH_LAT</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="HC_LAT" data-mode="point">HC_LAT 점</button>
     </div>
-    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 중심 클릭(드래그로 크기 조절), HC는 점 클릭입니다.</p>
+    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 가장자리 점 → 중심 순으로 두 번 클릭(반경=두 점 거리), HC는 점 클릭입니다.</p>
   `
 
   const labelPanel = document.getElementById('labelList')?.closest('.panel')

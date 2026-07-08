@@ -633,17 +633,24 @@ export class SpineAnnotator {
       // 마우스를 누르고 있을 필요가 없도록 여기서는 일반 클릭 점 추가를 막습니다.
       if (this.freehandMode) return
 
-      // 원(circle) 모드: 누른 지점이 중심. 드래그로 반경, 그냥 클릭이면 기본 반경.
+      // 원(circle) 모드: 1번째 클릭 = 원 위의 점(가장자리), 2번째 클릭 = 중심.
+      // 반경 = 두 점 사이 거리. → 클릭 두 번으로 크기까지 정확히 지정.
       if (this.pendingLabel && this.pendingLabelMode === 'circle' && !this.drawing) {
         const scale = this.stage.scaleX() || 1
-        this._circle = { cx: pos.x, cy: pos.y }
-        this._circlePreview = new Konva.Circle({
-          x: pos.x, y: pos.y, radius: 0,
-          stroke: getRegionColor(this.pendingLabel), strokeWidth: 2 / scale,
-          dash: [6 / scale, 4 / scale], listening: false,
-        })
-        this.previewLayer.add(this._circlePreview)
-        this.previewLayer.batchDraw()
+        const color = getRegionColor(this.pendingLabel)
+        if (!this._circleFirst) {
+          // 1번째 클릭: 가장자리 점
+          this._circleFirst = { x: pos.x, y: pos.y }
+          this._circleFirstDot = new Konva.Circle({ x: pos.x, y: pos.y, radius: 4 / scale, fill: color, listening: false })
+          this._circlePreview = new Konva.Circle({ x: pos.x, y: pos.y, radius: 0, stroke: color, strokeWidth: 2 / scale, dash: [6 / scale, 4 / scale], listening: false })
+          this.previewLayer.add(this._circleFirstDot)
+          this.previewLayer.add(this._circlePreview)
+          this.previewLayer.batchDraw()
+          return
+        }
+        // 2번째 클릭: 중심. 반경 = 첫 점까지 거리
+        const r = Math.hypot(this._circleFirst.x - pos.x, this._circleFirst.y - pos.y)
+        this._commitCircle(pos.x, pos.y, r)
         return
       }
 
@@ -674,40 +681,43 @@ export class SpineAnnotator {
   }
 
   onMouseUp(e) {
-    // 원(circle) 모드 마무리: 반경 확정 후 원을 폴리곤으로 생성
-    if (this._circle) {
-      const pos = this.getImagePos()
-      const scale = this.stage.scaleX() || 1
-      let r = pos ? Math.hypot(pos.x - this._circle.cx, pos.y - this._circle.cy) : 0
-      const defR = Math.max(15, Math.min(this.imageWidth || 400, this.imageHeight || 400) * 0.04)
-      if (r < 4 / scale) r = defR // 드래그 거의 없으면 기본 반경
-      const N = 32, pts = []
-      for (let i = 0; i < N; i++) {
-        const a = (2 * Math.PI * i) / N
-        pts.push(this._circle.cx + r * Math.cos(a), this._circle.cy + r * Math.sin(a))
-      }
-      this.polygons.push({
-        id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
-        manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
-      })
-      if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
-      this._circle = null
-      this.renderPolygons()
-      this.pushHistory()
-      this.notifyPolygons()
-      this.updateStatus?.()
-      return
-    }
     // 자유곡선은 이제 마우스 버튼을 누르고 있을 필요가 없으므로 별도 처리 없음
+  }
+
+  // 원(circle) 확정: 중심(cx,cy) + 반경 r 을 32각형 폴리곤으로 저장
+  _commitCircle(cx, cy, r) {
+    if (!(r > 0)) { this._clearCirclePreview(); return }
+    const N = 32, pts = []
+    for (let i = 0; i < N; i++) {
+      const a = (2 * Math.PI * i) / N
+      pts.push(cx + r * Math.cos(a), cy + r * Math.sin(a))
+    }
+    this.polygons.push({
+      id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
+      manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
+    })
+    this._clearCirclePreview()
+    this.renderPolygons()
+    this.pushHistory()
+    this.notifyPolygons()
+    this.updateStatus?.()
+  }
+
+  _clearCirclePreview() {
+    if (this._circleFirstDot) { this._circleFirstDot.destroy(); this._circleFirstDot = null }
+    if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
+    this._circleFirst = null
+    if (this.previewLayer) this.previewLayer.batchDraw()
   }
 
   onMouseMove(e) {
     const pos = this.getImagePos()
 
-    // 원(circle) 모드: 중심에서 커서까지 거리를 반경으로 미리보기
-    if (this._circle && this._circlePreview) {
+    // 원(circle) 모드: 커서를 중심 후보로, 첫 가장자리 점까지 거리를 반경으로 미리보기
+    if (this._circleFirst && this._circlePreview) {
       if (!pos) return
-      const r = Math.hypot(pos.x - this._circle.cx, pos.y - this._circle.cy)
+      const r = Math.hypot(this._circleFirst.x - pos.x, this._circleFirst.y - pos.y)
+      this._circlePreview.position({ x: pos.x, y: pos.y })
       this._circlePreview.radius(r)
       this.previewLayer.batchDraw()
       return
@@ -862,6 +872,7 @@ export class SpineAnnotator {
   // 폴리곤 그리기
   // ============================================================
   setPendingLabel(label, mode = '') {
+    this._clearCirclePreview?.()   // 원 그리던 중이면 첫 점 취소
     this.pendingLabel = label || null
     this.pendingLabelMode = mode || (isPelvisPointLabel(label) ? 'point' : 'polygon')
     this.updateStatus()
