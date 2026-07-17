@@ -864,10 +864,8 @@ export class SpineAnnotator {
   }
 
   onDoubleClick(e) {
-    if (this.tool === 'draw' && this.drawing) {
-      e.evt.preventDefault()
-      this.finishDrawing()
-    }
+    // 더블클릭으로 폴리곤을 완성하는 동작은 제거(실수 방지).
+    // 완성은 Q(순서대로) / W(각도순) / Enter 또는 시작점 클릭으로.
   }
 
   /** 스테이지 마우스 좌표 → 이미지 좌표 */
