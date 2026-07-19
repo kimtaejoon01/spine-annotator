@@ -7,6 +7,8 @@
 import { computeSagittalFromPolygons, toCSV, DEFAULT_RANGES, cobbAngle } from './auto-endplate.js'
 
 function currentFileName() {
+  // 앱 상태(state.filename)가 가장 정확. 없으면 전역/DOM 폴백.
+  try { if (window.__spineState && window.__spineState.filename) return window.__spineState.filename } catch (e) {}
   if (window.__spineCurrentFile) return window.__spineCurrentFile
   const el = document.querySelector('[data-current-file]') || document.getElementById('currentFileName')
   return el ? el.textContent.trim() : ''
@@ -31,11 +33,15 @@ export function initAutoEndplateUI(annotator) {
   const btnResetV = mount.querySelector('.ae-reset-v')
   const savedEl = mount.querySelector('.ae-saved')
   let review = { corners: {}, notes: {}, imageNote: '' }
+  const undoStack = []   // 검수 코너 교정 되돌리기(Ctrl+Z)용
+  const snapshot = () => JSON.parse(JSON.stringify(review.corners))
+  function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift() }
 
   function pushReviewToCanvas() {
     annotator.setEndplateReview?.(review.corners, chkReview.checked, onCornerMoved)
   }
   function onCornerMoved(label, key, xy) {
+    pushUndo()
     // 자동값을 기준으로 복사한 뒤 해당 코너만 갱신
     if (!review.corners[label]) {
       const a = lastResult && lastResult.corners[label]
@@ -63,6 +69,18 @@ export function initAutoEndplateUI(annotator) {
     if (list.includes(cur)) vsel.value = cur
   }
 
+  // Ctrl+Z — 검수 모드일 때 코너 교정 되돌리기 (app.js가 호출)
+  window.__spineReviewUndo = () => {
+    if (!chkReview.checked || undoStack.length === 0) return false
+    review.corners = undoStack.pop()
+    pushReviewToCanvas()
+    refreshVertebraSelect()
+    if (lastResult) renderResults(lastResult)
+    markDirty()
+    statusEl.textContent = '검수 되돌리기 (남은 단계: ' + undoStack.length + ')'
+    return true
+  }
+
   chkReview.addEventListener('change', () => {
     pushReviewToCanvas()
     statusEl.textContent = chkReview.checked ? '검수 모드: 코너 점을 드래그해 수정하세요.' : ''
@@ -76,6 +94,7 @@ export function initAutoEndplateUI(annotator) {
   noteImg.addEventListener('input', () => { review.imageNote = noteImg.value; markDirty() })
   btnResetV.addEventListener('click', () => {
     const v = vsel.value; if (!v) return
+    pushUndo()
     delete review.corners[v]
     pushReviewToCanvas(); refreshVertebraSelect()
     if (lastResult) renderResults(lastResult)

@@ -220,6 +220,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     },
   })
   window.__spineAnnotator = state.annotator
+  window.__spineState = state
 
   // 전처리 뷰 UI 초기화 (프리셋 토글 + 파라미터 패널)
   try { initPreprocessUI(state.annotator) } catch (e) { console.error('preprocess UI init 실패', e) }
@@ -1764,7 +1765,10 @@ function runAction(actionId) {
     case 'toolDraw': setTool('draw'); return true
     case 'toolEdit': setTool('edit'); return true
     case 'toolDelete': setTool('delete'); return true
-    case 'undo': state.annotator.undo(); return true
+    case 'undo':
+      // 검수 모드에서는 코너 교정 되돌리기를 우선 처리
+      if (window.__spineReviewUndo && window.__spineReviewUndo()) return true
+      state.annotator.undo(); return true
     case 'redo': state.annotator.redo(); return true
     case 'panMode': state.annotator.setPanMode(true); return true
     case 'freehandMode':
@@ -1792,6 +1796,7 @@ async function loadSampleImage() {
   state.currentImageUrl = sampleUrl
   state.currentImageUrl = sampleUrl
   state.filename = 'sample_00000000_AP.png'
+  try { window.__spineCurrentFile = state.filename } catch (e) {}
   resetLandmarksForFileSwitch()
   state.viewType = 'AP'
   state.patientId = 'sample'
@@ -1813,6 +1818,7 @@ function handleFileUpload(e) {
   if (!file) return
 
   state.filename = file.name
+  try { window.__spineCurrentFile = state.filename } catch (e) {}
   resetLandmarksForFileSwitch()
   const parsed = parseFilename(file.name)
   state.patientId = parsed.patientId
@@ -2800,6 +2806,7 @@ async function loadFileFromFolder(fileEntry) {
     state.currentObjectUrl = url
     state.currentImageUrl = url
     state.filename = fileEntry.name
+    try { window.__spineCurrentFile = state.filename } catch (e) {}
     resetLandmarksForFileSwitch()
     // 새 파일 열림 → 원격 수정 감지 초기화 (처음 로드는 알림 X)
     state.lastSeenRemoteUpdate = null
