@@ -289,20 +289,20 @@ app.get('/annotate', (c) => {
             </button>
           </div>
 
-          <div class="panel">
-            <h3 class="panel-title">
+          <details class="panel panel-collapsible" id="shortcutPanel">
+            <summary class="panel-title">
               <i class="fas fa-keyboard"></i> 단축키
               <button class="panel-action-btn" id="openShortcutsBtn" title="단축키 설정">
                 <i class="fas fa-cog"></i>
               </button>
-            </h3>
+            </summary>
             <ul class="shortcut-list" id="shortcutList">
               {/* JS가 동적으로 채움 */}
             </ul>
             <p class="panel-desc" style="margin-top:8px">
               <i class="fas fa-info-circle"></i> 항목을 클릭하면 키를 변경할 수 있어요
             </p>
-          </div>
+          </details>
           </div> {/* /sidebar-scroll */}
         </aside>
         {/* 좌측 리사이저 */}
