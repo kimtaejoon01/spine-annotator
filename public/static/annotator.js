@@ -128,6 +128,7 @@ export class SpineAnnotator {
     this.stage.width(rect.width)
     this.stage.height(rect.height)
     this.refreshPolygonVisualScale()
+    this.redrawAutoEndplate?.()
   }
 
   // ============================================================
@@ -248,6 +249,15 @@ export class SpineAnnotator {
     const g = new K.Group({ listening: !!this._endplateReviewMode })
     const s = (this.stage && this.stage.scaleX()) || 1
     const dotR = 3.5 / s
+    // 추체 크기에 비례한 점 크기(화면 기준 최소/최대로 제한) → 축소해도 과하지 않게
+    const dotRadiusFor = (c) => {
+      const a = c.SA, b = c.SP
+      let len = 0
+      if (a && b) len = Math.hypot(b[0] - a[0], b[1] - a[1])
+      const byShape = len * 0.10           // 종판 길이의 10%
+      const minR = 1.8 / s, maxR = 4.5 / s // 화면상 1.8~4.5px
+      return Math.max(minR, Math.min(byShape, maxR))
+    }
     const fontPx = 12 / s
     const review = this._endplateReview || {}
     const reviewMode = !!this._endplateReviewMode
@@ -269,11 +279,12 @@ export class SpineAnnotator {
 
       // (a) 자동 결과 꼭지점 — 항상 표시. 검수본이 있으면 '속 빈 원'으로 구분.
       //     절대 잡히지 않도록 listening:false (드래그는 검수본만)
+      const rBase = dotRadiusFor(autoC)
       for (const k of keys) {
         const pt = autoC[k]
         if (!pt) continue
         g.add(new K.Circle({
-          x: pt[0], y: pt[1], radius: dotR,
+          x: pt[0], y: pt[1], radius: rBase,
           fill: hasRev ? undefined : dotColors[k],
           stroke: hasRev ? dotColors[k] : undefined,
           strokeWidth: hasRev ? 1.5 / s : 0,
@@ -287,7 +298,7 @@ export class SpineAnnotator {
           const pt = rev[k]
           if (!pt) continue
           const c = new K.Circle({
-            x: pt[0], y: pt[1], radius: reviewMode ? dotR * 1.8 : dotR * 1.2,
+            x: pt[0], y: pt[1], radius: reviewMode ? rBase * 1.35 : rBase * 1.1,
             fill: '#4dabf7',
             stroke: reviewMode ? '#ffffff' : undefined, strokeWidth: reviewMode ? 1.5 / s : 0,
             draggable: reviewMode, listening: reviewMode,
@@ -306,7 +317,7 @@ export class SpineAnnotator {
           const pt = autoC[k]
           if (!pt) continue
           const c = new K.Circle({
-            x: pt[0], y: pt[1], radius: dotR * 1.8,
+            x: pt[0], y: pt[1], radius: rBase * 1.35,
             fill: dotColors[k], stroke: '#ffffff', strokeWidth: 1.5 / s,
             draggable: true, listening: true, endplateCorner: true, opacity: 0.9,
           })
