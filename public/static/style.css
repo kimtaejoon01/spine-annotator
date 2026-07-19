@@ -2532,3 +2532,4 @@ kbd {
 .panel-collapsible[open] > summary::after { transform: rotate(180deg); }
 .panel-collapsible > summary .panel-action-btn { margin-left: 4px; }
 .ae-auto-run-row { display:flex; align-items:center; gap:5px; margin:3px 0 5px; }
+.ae-status.ae-warn { color: var(--accent-orange,#db7c2f); font-weight:600; }

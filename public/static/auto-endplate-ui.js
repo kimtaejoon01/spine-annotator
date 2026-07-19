@@ -112,7 +112,12 @@ export function initAutoEndplateUI(annotator) {
   })
   vsel.addEventListener('change', () => { noteV.value = review.notes[vsel.value] || '' })
   noteV.addEventListener('input', () => {
-    if (!vsel.value) return
+    if (!vsel.value) {
+      statusEl.textContent = '⚠ 먼저 위에서 추체를 선택하세요 (메모가 저장되지 않습니다)'
+      statusEl.classList.add('ae-warn')
+      return
+    }
+    statusEl.classList.remove('ae-warn')
     if (noteV.value.trim()) review.notes[vsel.value] = noteV.value; else delete review.notes[vsel.value]
     refreshVertebraSelect(); pushReviewToCanvas(); markDirty()
   })
@@ -212,6 +217,7 @@ export function initAutoEndplateUI(annotator) {
     if (chkOverlay.checked) drawOverlay(result)
     btnCsv.disabled = false
     refreshVertebraSelect()
+    if (!vsel.value && result.present.length) { vsel.value = result.present[0]; noteV.value = review.notes[vsel.value] || '' }
     pushReviewToCanvas()
   }
 
@@ -343,7 +349,7 @@ function ensurePanel() {
     '      <select class="ae-vsel"><option value="">추체 선택…</option></select>' +
     '      <button type="button" class="ae-reset-v" title="이 추체를 자동값으로 되돌리기">되돌리기</button>' +
     '    </div>' +
-    '    <textarea class="ae-note-v" rows="2" placeholder="선택한 추체 메모 (예: 상종판 한 칸 위)"></textarea>' +
+    '    <textarea class="ae-note-v" rows="2" placeholder="① 위에서 추체 선택 → ② 메모 입력 (예: 상종판 한 칸 위)"></textarea>' +
     '    <textarea class="ae-note-img" rows="2" placeholder="이미지 전체 메모"></textarea>' +
     '    <div class="ae-controls">' +
     '      <button type="button" class="ae-save">검수 저장</button>' +
