@@ -271,15 +271,26 @@ export function initAutoEndplateUI(annotator) {
   })
   // 이미지 바뀌면 이전 오버레이/결과 정리
   // 라벨 로딩이 끝나면(새 이미지) 전역 설정에 따라 자동 측정 + 검수 모드 유지
-  window.addEventListener('spine:labels-loaded', (ev) => {
-    const count = (ev && ev.detail && ev.detail.count) || 0
-    loadReview().then(() => {
-      if (chkAutoRun.checked && count >= 2) {
-        run()                       // 자동 측정 실행
-        pushReviewToCanvas()        // 검수 모드/교정본 그대로 적용
+  window.addEventListener('spine:labels-loaded', () => { scheduleAutoRun() })
+
+  // 이벤트가 누락되는 경로가 있어도 동작하도록, 폴리곤이 준비될 때까지 잠깐 기다렸다 실행
+  let autoRunTimer = null
+  function scheduleAutoRun() {
+    clearTimeout(autoRunTimer)
+    let tries = 0
+    const tick = () => {
+      tries++
+      const polys = (annotator.polygons || []).filter(p => p && p.label && Array.isArray(p.points) && p.points.length >= 8)
+      if (polys.length >= 2) {
+        loadReview().then(() => {
+          if (chkAutoRun.checked) { run(); pushReviewToCanvas() }
+        })
+        return
       }
-    })
-  })
+      if (tries < 12) autoRunTimer = setTimeout(tick, 250)   // 최대 3초 대기
+    }
+    autoRunTimer = setTimeout(tick, 120)
+  }
 
   // 이미지가 바뀌면 화면/상태만 초기화 (검수 데이터 로드와 자동측정은
   // 라벨 로딩이 끝나는 'spine:labels-loaded' 시점에 처리한다)
@@ -291,6 +302,7 @@ export function initAutoEndplateUI(annotator) {
     undoStack.length = 0
     noteV.value = ''; noteImg.value = ''; savedEl.textContent = ''
     refreshVertebraSelect()
+    scheduleAutoRun()   // 이미지 전환 후에도 자동 실행 시도
   })
 
   loadSettings()

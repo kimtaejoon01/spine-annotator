@@ -2891,8 +2891,6 @@ function restoreVisibleLandmarksAfterLoad(landmarks, source = '') {
     state.annotator.renderLandmarks?.()
     state.annotator.stage?.batchDraw?.()
     state.landmarkApi?.refresh?.()
-    // 라벨 로딩 완료 → 자동측정/검수 UI가 이어받아 실행
-    try { window.dispatchEvent(new CustomEvent('spine:labels-loaded', { detail: { filename, count: polygons.length } })) } catch (e) {}
     console.log('[Landmark] restored visible landmarks', source, items.length, state.annotator.getLandmarks?.().length)
   }
   apply()
@@ -2922,6 +2920,7 @@ async function loadLabelsFromStorage(filename) {
     if (!data.exists) {
       state.labelVersion = null
       state.annotator.loadPolygons([])
+      try { window.dispatchEvent(new CustomEvent('spine:labels-loaded', { detail: { filename, count: 0 } })) } catch (e) {}
       state.annotator.loadLandmarks?.([])
       state.landmarkApi?.refresh?.()
       state.lastSeenRemoteUpdate = null
@@ -2953,6 +2952,7 @@ async function loadLabelsFromStorage(filename) {
     console.log('[Landmark] loadLabelsFromStorage', filename, 'polygons=', polygons.length, 'landmarks=', landmarks.length)
 
     state.annotator.loadPolygons(polygons)
+    try { window.dispatchEvent(new CustomEvent('spine:labels-loaded', { detail: { filename, count: polygons.length } })) } catch (e) {}
     state.annotator.loadLandmarks?.(landmarks)
     state.annotator.landmarkLayer?.show?.()
     state.annotator.landmarkLayer?.moveToTop?.()
@@ -2980,6 +2980,7 @@ async function loadLabelsFromStorage(filename) {
     if (err.status === 401) openAuthModal()
     state.labelVersion = null
     state.annotator.loadPolygons([])
+    try { window.dispatchEvent(new CustomEvent('spine:labels-loaded', { detail: { filename, count: 0 } })) } catch (e) {}
     state.annotator.loadLandmarks?.([])
     state.landmarkApi?.refresh?.()
   } finally {
