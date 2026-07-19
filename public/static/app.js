@@ -2891,6 +2891,8 @@ function restoreVisibleLandmarksAfterLoad(landmarks, source = '') {
     state.annotator.renderLandmarks?.()
     state.annotator.stage?.batchDraw?.()
     state.landmarkApi?.refresh?.()
+    // 라벨 로딩 완료 → 자동측정/검수 UI가 이어받아 실행
+    try { window.dispatchEvent(new CustomEvent('spine:labels-loaded', { detail: { filename, count: polygons.length } })) } catch (e) {}
     console.log('[Landmark] restored visible landmarks', source, items.length, state.annotator.getLandmarks?.().length)
   }
   apply()

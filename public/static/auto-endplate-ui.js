@@ -33,6 +33,24 @@ export function initAutoEndplateUI(annotator) {
   const btnResetV = mount.querySelector('.ae-reset-v')
   const savedEl = mount.querySelector('.ae-saved')
   let review = { corners: {}, notes: {}, imageNote: '' }
+  // ---- 전역 설정(이미지 바뀌어도 유지) ----
+  const SETTINGS_KEY = 'spine-annotator:autoEndplateSettings'
+  const chkAutoRun = mount.querySelector('.ae-autorun')
+  function loadSettings() {
+    try {
+      const j = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')
+      chkReview.checked = !!j.reviewMode
+      chkAutoRun.checked = j.autoRun !== false   // 기본 켬
+      if (typeof j.overlay === 'boolean') chkOverlay.checked = j.overlay
+    } catch (e) { chkAutoRun.checked = true }
+  }
+  function saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        reviewMode: chkReview.checked, autoRun: chkAutoRun.checked, overlay: chkOverlay.checked,
+      }))
+    } catch (e) {}
+  }
   const undoStack = []   // 검수 코너 교정 되돌리기(Ctrl+Z)용
   const snapshot = () => JSON.parse(JSON.stringify(review.corners))
   function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift() }
@@ -81,7 +99,10 @@ export function initAutoEndplateUI(annotator) {
     return true
   }
 
+  chkAutoRun.addEventListener('change', saveSettings)
+  chkOverlay.addEventListener('change', saveSettings)
   chkReview.addEventListener('change', () => {
+    saveSettings()
     pushReviewToCanvas()
     statusEl.textContent = chkReview.checked ? '검수 모드: 코너 점을 드래그해 수정하세요.' : ''
   })
@@ -249,15 +270,30 @@ export function initAutoEndplateUI(annotator) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   })
   // 이미지 바뀌면 이전 오버레이/결과 정리
+  // 라벨 로딩이 끝나면(새 이미지) 전역 설정에 따라 자동 측정 + 검수 모드 유지
+  window.addEventListener('spine:labels-loaded', (ev) => {
+    const count = (ev && ev.detail && ev.detail.count) || 0
+    loadReview().then(() => {
+      if (chkAutoRun.checked && count >= 2) {
+        run()                       // 자동 측정 실행
+        pushReviewToCanvas()        // 검수 모드/교정본 그대로 적용
+      }
+    })
+  })
+
+  // 이미지가 바뀌면 화면/상태만 초기화 (검수 데이터 로드와 자동측정은
+  // 라벨 로딩이 끝나는 'spine:labels-loaded' 시점에 처리한다)
   window.addEventListener('spine:image-loaded', () => {
     annotator.clearAutoEndplateOverlay()
     lastResult = null; btnCsv.disabled = true
     body.innerHTML = ''; statusEl.textContent = ''
     review = { corners: {}, notes: {}, imageNote: '' }
+    undoStack.length = 0
     noteV.value = ''; noteImg.value = ''; savedEl.textContent = ''
     refreshVertebraSelect()
-    loadReview()   // 이 이미지의 기존 검수 결과 불러오기
   })
+
+  loadSettings()
   loadReview()
 }
 
@@ -279,6 +315,7 @@ function ensurePanel() {
     '    <label class="ae-chk"><input type="checkbox" class="ae-overlay" checked> 종판선 표시</label>' +
     '    <button type="button" class="ae-csv" disabled>CSV</button>' +
     '  </div>' +
+    '  <label class="ae-chk ae-auto-run-row"><input type="checkbox" class="ae-autorun"> 이미지 열면 자동 측정 (전역)</label>' +
     '  <div class="ae-review-box">' +
     '    <label class="ae-chk ae-review-toggle"><input type="checkbox" class="ae-review"> 검수 모드 (코너 드래그)</label>' +
     '    <div class="ae-legend">' +
