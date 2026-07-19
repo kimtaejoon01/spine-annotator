@@ -242,7 +242,10 @@ export class SpineAnnotator {
     const items = this._autoEndplateItems
     if (!items) { this.autoEndplateLayer.batchDraw(); return }
     const K = window.Konva
-    const g = new K.Group({ listening: true })
+    // 레이어가 listening:false면 자식(드래그 코너)이 이벤트를 못 받는다.
+    // 검수 모드일 때만 레이어/그룹을 켜고, 평소엔 꺼서 클릭 방해가 없게 한다.
+    this.autoEndplateLayer.listening(!!this._endplateReviewMode)
+    const g = new K.Group({ listening: !!this._endplateReviewMode })
     const s = (this.stage && this.stage.scaleX()) || 1
     const dotR = 3.5 / s
     const fontPx = 12 / s
@@ -647,7 +650,8 @@ export class SpineAnnotator {
   onMouseDown(e) {
     if (this.panMode) return // 스페이스+드래그 모드는 stage가 처리
 
-    // 검수 모드: 코너 드래그가 폴리곤 그리기와 겹치지 않도록 그리기 입력을 막는다.
+    // 검수 모드: 코너 드래그가 폴리곤 그리기와 겹치지 않도록 '그리기'만 막는다.
+    // (Konva의 draggable 처리는 이 핸들러와 무관하게 진행됨)
     if (this._endplateReviewMode) return
     if (e.target && e.target.getAttr && e.target.getAttr('endplateCorner')) return
 
