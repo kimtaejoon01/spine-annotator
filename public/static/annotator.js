@@ -242,26 +242,61 @@ export class SpineAnnotator {
     const items = this._autoEndplateItems
     if (!items) { this.autoEndplateLayer.batchDraw(); return }
     const K = window.Konva
-    const g = new K.Group({ listening: false })
+    const g = new K.Group({ listening: true })
     const s = (this.stage && this.stage.scaleX()) || 1
-    const dotR = 3.5 / s   // 화면상 항상 ~3.5px (줌마다 재계산되어 커지지 않음)
+    const dotR = 3.5 / s
     const fontPx = 12 / s
-    // 선 두께는 줌에 따라 함께 스케일되는 기본값(처음 버전)
-    const line = (a, b, color) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2, listening: false })
-    const dot = (p, color) => new K.Circle({ x: p[0], y: p[1], radius: dotR, fill: color, listening: false })
+    const review = this._endplateReview || {}          // { label: {SA,SP,IA,IP} } 교수님 수정본
+    const reviewMode = !!this._endplateReviewMode
+    const COL = {
+      autoSup: '#39d353', autoInf: '#e3a008',           // 자동: 초록/주황
+      revSup: '#4dabf7', revInf: '#845ef7',             // 교수님: 파랑/보라
+    }
+    const line = (a, b, color, dash) => new K.Line({
+      points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: 2,
+      dash: dash ? [6 / s, 4 / s] : undefined, listening: false,
+    })
     for (const it of items) {
-      const { SA, SP, IA, IP } = it
-      if (SA && SP) g.add(line(SA, SP, '#39d353'))   // 상종판(초록)
-      if (IA && IP) g.add(line(IA, IP, '#e3a008'))   // 하종판(주황)
-      if (SA) g.add(dot(SA, '#f85149'))
-      if (SP) g.add(dot(SP, '#f0e442'))
-      if (IA) g.add(dot(IA, '#d946ef'))
-      if (IP) g.add(dot(IP, '#ffffff'))
-      const corners = [SA, SP, IA, IP].filter(Boolean)
-      if (it.label && corners.length) {
+      const label = it.label
+      const rev = review[label]
+      const autoC = { SA: it.SA, SP: it.SP, IA: it.IA, IP: it.IP }
+      // 1) 자동 결과 (수정본이 있으면 점선으로 옅게 = 비교용)
+      const hasRev = !!rev
+      if (autoC.SA && autoC.SP) { const l = line(autoC.SA, autoC.SP, COL.autoSup, hasRev); if (hasRev) l.opacity(0.55); g.add(l) }
+      if (autoC.IA && autoC.IP) { const l = line(autoC.IA, autoC.IP, COL.autoInf, hasRev); if (hasRev) l.opacity(0.55); g.add(l) }
+      // 2) 교수님 수정본 (있으면 실선으로 위에)
+      if (hasRev) {
+        if (rev.SA && rev.SP) g.add(line(rev.SA, rev.SP, COL.revSup, false))
+        if (rev.IA && rev.IP) g.add(line(rev.IA, rev.IP, COL.revInf, false))
+      }
+      // 3) 코너 점 — 검수 모드면 드래그 가능(수정본 좌표 기준)
+      const eff = hasRev ? rev : autoC
+      const keys = ['SA', 'SP', 'IA', 'IP']
+      const dotColors = { SA: '#f85149', SP: '#f0e442', IA: '#d946ef', IP: '#ffffff' }
+      for (const k of keys) {
+        const p = eff[k]
+        if (!p) continue
+        const c = new K.Circle({
+          x: p[0], y: p[1], radius: reviewMode ? dotR * 1.8 : dotR,
+          fill: hasRev ? '#4dabf7' : dotColors[k],
+          stroke: reviewMode ? '#ffffff' : undefined, strokeWidth: reviewMode ? 1.5 / s : 0,
+          draggable: reviewMode, listening: reviewMode,
+        })
+        if (reviewMode) {
+          c.on('mouseenter', () => { this.containerEl.style.cursor = 'grab' })
+          c.on('mouseleave', () => { this.containerEl.style.cursor = 'default' })
+          c.on('dragend', () => {
+            const pos = c.position()
+            this._onEndplateCornerMoved?.(label, k, [pos.x, pos.y])
+          })
+        }
+        g.add(c)
+      }
+      const corners = keys.map(k => eff[k]).filter(Boolean)
+      if (label && corners.length) {
         const cx = corners.reduce((a, p) => a + p[0], 0) / corners.length
         const cy = corners.reduce((a, p) => a + p[1], 0) / corners.length
-        g.add(new K.Text({ x: cx, y: cy, text: it.label, fontSize: fontPx, fill: '#ffd43b', listening: false }))
+        g.add(new K.Text({ x: cx, y: cy, text: label, fontSize: fontPx, fill: hasRev ? '#4dabf7' : '#ffd43b', listening: false }))
       }
     }
     this._autoEndplateGroup = g
@@ -269,449 +304,12 @@ export class SpineAnnotator {
     this.autoEndplateLayer.batchDraw()
   }
 
-  // ============================================================
-  // 오버레이 표시 / AI mask
-  // ============================================================
-  setHumanLabelVisible(visible) {
-    this.humanLabelVisible = visible !== false
-    window.__spineHumanLabelVisible = this.humanLabelVisible
-    if (this.polyLayer) this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
-    this.renderPolygons()
-    if (this.polyLayer) {
-      this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
-      this.polyLayer.batchDraw()
-    }
-  }
-
-  getHumanLabelVisible() {
-    return this.humanLabelVisible !== false
-  }
-
-  setLabelOverlayVisible(visible) {
-    this.labelOverlayVisible = visible !== false
-    window.__spineLineNameVisible = this.labelOverlayVisible
-    this.renderPolygons()
-  }
-
-  getLabelOverlayVisible() {
-    return this.labelOverlayVisible !== false
-  }
-  // ============================================================
-  // AI mask overlay methods
-  // ============================================================
-  setAiMaskVisible(visible) {
-    this.aiMaskOverlayVisible = visible !== false
-    if (this.aiMaskLayer) {
-      this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
-      this.aiMaskLayer.batchDraw()
-    }
-  }
-
-  setAiMaskOpacity(percent) {
-    const value = Math.max(0, Math.min(100, Number(percent))) / 100
-    this.aiMaskOpacity = value
-    if (this.aiMaskLayer) {
-      this.aiMaskLayer.opacity(value)
-      this.aiMaskLayer.batchDraw()
-    }
-  }
-
-  clearAiMasks() {
-    this.aiMaskNodes = []
-    if (this.aiMaskLayer) {
-      this.aiMaskLayer.destroyChildren()
-      this.aiMaskLayer.draw()
-    }
-  }
-
-  async loadAiMasks(items = []) {
-    this.clearAiMasks()
-    if (!items.length || !this.imageWidth || !this.imageHeight || !this.aiMaskLayer) return
-    const nodes = []
-    for (const item of items) {
-      try {
-        const img = await this.loadMaskImage(item.url)
-        const colored = this.colorizeMaskImage(img, item.color || '#58a6ff')
-        const node = new Konva.Image({
-          image: colored,
-          x: 0,
-          y: 0,
-          width: this.imageWidth,
-          height: this.imageHeight,
-          listening: false,
-          opacity: 1,
-        })
-        node.setAttr('aiRegion', item.region || '')
-        node.setAttr('aiModel', item.modelKey || item.model || '')
-        this.aiMaskLayer.add(node)
-        nodes.push(node)
-      } catch (err) {
-        console.warn('[AI mask] load failed:', item, err)
-      }
-    }
-    this.aiMaskNodes = nodes
-    this.aiMaskLayer.opacity(this.aiMaskOpacity)
-    this.aiMaskLayer.visible(this.aiMaskOverlayVisible)
-    this.aiMaskLayer.draw()
-  }
-
-  loadMaskImage(src) {
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = reject
-      img.src = src
-    })
-  }
-
-  colorizeMaskImage(img, color) {
-    const canvas = document.createElement('canvas')
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    ctx.drawImage(img, 0, 0)
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const rgb = this.hexToRgb(color)
-    for (let i = 0; i < data.data.length; i += 4) {
-      const r = data.data[i]
-      const g = data.data[i + 1]
-      const b = data.data[i + 2]
-      const a = data.data[i + 3]
-      const brightness = Math.max(r, g, b)
-      if (a > 0 && brightness >= 128) {
-        data.data[i] = rgb.r
-        data.data[i + 1] = rgb.g
-        data.data[i + 2] = rgb.b
-        data.data[i + 3] = 230
-      } else {
-        data.data[i + 3] = 0
-      }
-    }
-    ctx.putImageData(data, 0, 0)
-    return canvas
-  }
-
-  hexToRgb(hex) {
-    const m = String(hex).replace('#', '').match(/^([0-9a-f]{6})$/i)
-    if (!m) return { r: 88, g: 166, b: 255 }
-    const n = parseInt(m[1], 16)
-    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
-  }
-
-  // ============================================================
-  // 줌 / 팬
-  // ============================================================
-  zoomToFit() {
-    if (!this.imageWidth) return
-    const sw = this.stage.width()
-    const sh = this.stage.height()
-    const scaleX = sw / this.imageWidth
-    const scaleY = sh / this.imageHeight
-    const scale = Math.min(scaleX, scaleY) * 0.95
-
-    this.stage.scale({ x: scale, y: scale })
-    this.stage.position({
-      x: (sw - this.imageWidth * scale) / 2,
-      y: (sh - this.imageHeight * scale) / 2,
-    })
-    this.stage.batchDraw()
-    this.renderMeasurementDebugOverlay?.()
-    this.notifyZoom()
-    this.refreshPolygonVisualScale()
-  }
-
-  zoomTo(scale) {
-    const sw = this.stage.width()
-    const sh = this.stage.height()
-    const center = { x: sw / 2, y: sh / 2 }
-    this.zoomAtPoint(scale, center)
-  }
-
-  zoomBy(factor) {
-    const current = this.stage.scaleX()
-    const sw = this.stage.width()
-    const sh = this.stage.height()
-    const center = { x: sw / 2, y: sh / 2 }
-    this.zoomAtPoint(current * factor, center)
-  }
-
-  zoomAtPoint(newScale, point) {
-    newScale = Math.max(0.05, Math.min(20, newScale))
-    const oldScale = this.stage.scaleX()
-    const stagePos = this.stage.position()
-
-    const mousePointTo = {
-      x: (point.x - stagePos.x) / oldScale,
-      y: (point.y - stagePos.y) / oldScale,
-    }
-
-    this.stage.scale({ x: newScale, y: newScale })
-    this.stage.position({
-      x: point.x - mousePointTo.x * newScale,
-      y: point.y - mousePointTo.y * newScale,
-    })
-    this.stage.batchDraw()
-    this.renderMeasurementDebugOverlay?.()
-    this.notifyZoom()
-    this.refreshPolygonVisualScale()
-  }
-
-  onWheel(e) {
-    e.evt.preventDefault()
-    const pointer = this.stage.getPointerPosition()
-    if (!pointer) return
-
-    // deltaY를 픽셀 단위로 정규화 (deltaMode: 0=픽셀, 1=라인, 2=페이지)
-    let dy = e.evt.deltaY
-    if (e.evt.deltaMode === 1) dy *= 16      // 라인 → 픽셀 근사
-    else if (e.evt.deltaMode === 2) dy *= 100 // 페이지 → 픽셀 근사
-
-    // 한 번의 deltaY가 너무 크면 클램프 (마우스 휠 한 칸이 100~120 정도)
-    // 트랙패드는 보통 1~30, 부드러운 마우스는 30~80
-    dy = Math.max(-200, Math.min(200, dy))
-
-    // 줌 감도: dy=100(마우스 휠 한 칸)일 때 약 5% 줌
-    // factor = exp(-dy * sensitivity)로 양방향 대칭 부드러운 줌
-    const sensitivity = 0.0005   // 값이 작을수록 부드러움 (0.001=빠름, 0.0005=중간, 0.0003=느림)
-    const factor = Math.exp(-dy * sensitivity)
-
-    const newScale = this.stage.scaleX() * factor
-    // 스케일 범위 제한 (너무 작거나 큰 줌 방지)
-    const clamped = Math.max(0.05, Math.min(20, newScale))
-    this.zoomAtPoint(clamped, pointer)
-  }
-
-  notifyZoom() {
-    this.renderLandmarks?.()
-    if (this.opts.onZoomChange) this.opts.onZoomChange(this.stage.scaleX())
-  }
-
-  setPanMode(enabled) {
-    this.panMode = enabled
-    this.stage.draggable(enabled)
-    if (enabled) this.clearEditHover()
-    this.containerEl.style.cursor = enabled ? 'grab' : (
-      this.tool === 'draw' ? 'crosshair' :
-      this.tool === 'delete' ? 'not-allowed' : 'default'
-    )
-  }
-
-  /**
-   * 자유 곡선 모드 (S키 누름)
-   * - 활성화 시: 마우스를 움직이면 일정 간격마다 점 자동 추가됨
-   * - 그리기 도구일 때만 의미 있음
-   * - 비활성화 시: 일반 클릭 모드로 복귀
-   */
-  setFreehandMode(enabled) {
-    this.freehandMode = enabled
-    // 그리기 모드에서만 시각 피드백
-    if (this.tool === 'draw' && !this.panMode) {
-      this.containerEl.style.cursor = enabled ? 'cell' : 'crosshair'
-    }
-    this.updateStatus()
-  }
-
-  // ============================================================
-  // 도구 변경
-  // ============================================================
-  setTool(tool) {
-    // 그리는 중이면 → draw/edit 사이 전환은 상태 유지, 그 외엔 취소
-    if (this.drawing) {
-      if (tool === 'draw' || tool === 'edit') {
-        // 점들 그대로 유지. 편집 모드에선 점 드래그로 위치 조정 가능
-        this.tool = tool
-        this.clearEditHover()
-        this.selectPolygon(null)
-        this.setPanMode(this.panMode)
-        this.updateDraftVerticesDraggable() // 그리던 점들의 드래그 가능 상태 토글
-        this.updateStatus()
-        return
-      }
-      // delete 모드 등으로 가면 그리던 거 취소
-      this.cancelDrawing()
-    }
-
-    this.tool = tool
-    this.clearEditHover()
-    this.selectPolygon(null)
-    this.setPanMode(this.panMode) // 커서 갱신
-    this.updateStatus()
-  }
-
-  /**
-   * 그리는 중인 점들(currentVertices)의 draggable 상태를 현재 도구에 맞게 갱신
-   * - edit 모드: 드래그로 위치 조정 가능
-   * - draw 모드: 드래그 불가 (원래대로)
-   */
-  updateDraftVerticesDraggable() {
-    if (!this.drawing) return
-    const draggable = (this.tool === 'edit')
-    for (let i = 0; i < this.currentVertices.length; i++) {
-      const v = this.currentVertices[i]
-      if (!v) continue
-      v.draggable(draggable)
-      // 편집 모드일 때 드래그 이벤트 (한 번만 바인딩되도록 attr로 체크)
-      if (draggable && !v.getAttr('_draftDragBound')) {
-        v.setAttr('_draftDragBound', true)
-        const idx = i * 2 // currentPoints 인덱스
-        v.on('dragmove.draft', () => {
-          const pos = v.position()
-          this.currentPoints[idx] = pos.x
-          this.currentPoints[idx + 1] = pos.y
-          // 미리보기 라인 갱신
-          if (this.previewLine) {
-            this.previewLine.points(this.currentPoints.slice())
-            this.previewLayer.batchDraw()
-          }
-        })
-        v.on('mouseenter.draft', () => {
-          if (this.tool === 'edit') this.containerEl.style.cursor = 'grab'
-        })
-        v.on('mouseleave.draft', () => {
-          if (this.tool === 'edit') this.containerEl.style.cursor = 'default'
-        })
-      }
-    }
-    this.previewLayer.batchDraw()
-  }
-
-
-
-  updateStatus() {
-    let text = ''
-    if (this.panMode) {
-      text = '팬 모드 - 드래그하여 화면 이동'
-    } else if (this.freehandMode && this.tool === 'draw') {
-      const n = this.currentPoints.length / 2
-      if (this.freehandDragging) {
-        text = `🖊️ 자유곡선 모드 — 마우스를 움직이면 점 추가 (현재 ${n}개) / S 떼면 일시 정지 / Q: 완성`
-      } else if (this.drawing) {
-        text = `🖊️ 자유곡선 모드 — 마우스를 움직이면 점 추가 (현재 ${n}개) / S 떼면 일시 정지 / Q: 완성`
-      } else {
-        text = '🖊️ 자유곡선 모드 — 마우스를 움직이면 바로 점이 찍힙니다 (S 떼면 일반 클릭 모드)'
-      }
-    } else if (this.tool === 'draw') {
-      if (this.drawing) {
-        const n = this.currentPoints.length / 2
-        text = `점 ${n}개 — Q: 순서대로 완성 / W: 각도순 정렬 완성 / E: 마지막 점 취소 / S+마우스 이동: 자유곡선`
-      } else {
-        text = '그리기 모드 — 클릭으로 점 추가 / S 누른 채 마우스 이동: 자유곡선'
-      }
-    } else if (this.tool === 'edit') {
-      if (this.drawing) {
-        const n = this.currentPoints.length / 2
-        text = `편집 중 (그리던 폴리곤 점 ${n}개) — 점 드래그로 조정 / Enter: 순서대로 완성 / Shift+Enter: 각도순 완성 / Esc: 취소`
-      } else {
-        text = '편집 모드 — 점 드래그로 이동 / 변 위 클릭으로 점 추가 / 점 위에서 R: 점 삭제 (우클릭/더블클릭도 가능)'
-      }
-    } else if (this.tool === 'delete') {
-      text = '삭제 모드 - 삭제할 폴리곤을 클릭하세요'
-    }
-    if (this.opts.onStatusChange) this.opts.onStatusChange(text)
-  }
-
-  // ============================================================
-  // 마우스 이벤트 핸들러
-  // ============================================================
-  onMouseDown(e) {
-    if (this.panMode) return // 스페이스+드래그 모드는 stage가 처리
-
-    // 캔버스 좌표 → 이미지 좌표 변환
-    const pos = this.getImagePos()
-    if (!pos) return
-
-    if (this.tool === 'draw') {
-      // 클릭이 점/선/이미지 어디에서 발생했든 점 추가
-      if (e.evt.button !== 0) return // 좌클릭만
-
-      // 이미 만든 폴리곤의 점/선을 클릭하면 무시 (편집은 edit 모드에서)
-      if (e.target.getAttr('polyId') && !this.drawing) {
-        // 그릴 때는 본인 점 클릭으로 닫기 가능 (시작점)
-        return
-      }
-      // 자유곡선 모드에서는 클릭이 아니라 마우스 이동으로 점을 추가합니다.
-      // 마우스를 누르고 있을 필요가 없도록 여기서는 일반 클릭 점 추가를 막습니다.
-      if (this.freehandMode) return
-
-      // 원(circle) 모드: 1번째 클릭 = 원 위의 점(가장자리), 2번째 클릭 = 중심.
-      // 반경 = 두 점 사이 거리. → 클릭 두 번으로 크기까지 정확히 지정.
-      if (this.pendingLabel && this.pendingLabelMode === 'circle' && !this.drawing) {
-        const scale = this.stage.scaleX() || 1
-        const color = getRegionColor(this.pendingLabel)
-        if (!this._circleFirst) {
-          // 1번째 클릭: 가장자리 점
-          this._circleFirst = { x: pos.x, y: pos.y }
-          this._circleFirstDot = new Konva.Circle({ x: pos.x, y: pos.y, radius: 4 / scale, fill: color, listening: false })
-          this._circlePreview = new Konva.Circle({ x: pos.x, y: pos.y, radius: 0, stroke: color, strokeWidth: 2 / scale, dash: [6 / scale, 4 / scale], listening: false })
-          this.previewLayer.add(this._circleFirstDot)
-          this.previewLayer.add(this._circlePreview)
-          this.previewLayer.batchDraw()
-          return
-        }
-        // 2번째 클릭: 중심. 반경 = 첫 점까지 거리
-        const r = Math.hypot(this._circleFirst.x - pos.x, this._circleFirst.y - pos.y)
-        this._commitCircle(pos.x, pos.y, r)
-        return
-      }
-
-      this.addPoint(pos.x, pos.y)
-    } else if (this.tool === 'edit') {
-      // 좌클릭만 처리 (우클릭은 점 삭제용 contextmenu)
-      if (e.evt.button !== 0) return
-
-      // 그리는 중인 폴리곤이 있으면 점 추가 X (드래그로 점 조정에 집중)
-      if (this.drawing) return
-
-      // 변 위 호버 미리보기가 있고 점이 아닌 곳을 클릭 → 점 삽입
-      if (this.editHover && this.hoveringVertex == null) {
-        const polyId = this.editHover.polyId
-        const insertIdx = this.editHover.insertIdx
-        const { x, y } = this.editHover
-        const poly = this.polygons.find(p => p.id === polyId)
-        if (poly) {
-          poly.points.splice(insertIdx, 0, x, y)
-          this.clearEditHover()
-          this._justInsertedPoint = true // stage click의 선택 해제 방지
-          this.renderPolygons()
-          this.pushHistory()
-          this.notifyPolygons()
-        }
-      }
-    }
-  }
-
-  onMouseUp(e) {
-    // 자유곡선은 이제 마우스 버튼을 누르고 있을 필요가 없으므로 별도 처리 없음
-  }
-
-  // 원(circle) 확정: 중심(cx,cy) + 반경 r 을 32각형 폴리곤으로 저장
-  _commitCircle(cx, cy, r) {
-    if (!(r > 0)) { this._clearCirclePreview(); return }
-    const N = 32, pts = []
-    for (let i = 0; i < N; i++) {
-      const a = (2 * Math.PI * i) / N
-      pts.push(cx + r * Math.cos(a), cy + r * Math.sin(a))
-    }
-    this.polygons.push({
-      id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
-      manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
-    })
-    this._clearCirclePreview()
-    // 원 완성 후 기본 폴리곤 모드로 복귀 (다음 클릭이 실수로 원이 되지 않도록)
-    this.pendingLabel = null
-    this.pendingLabelMode = 'polygon'
-    this.renderPolygons()
-    this.pushHistory()
-    this.notifyPolygons()
-    this.updateStatus?.()
-    try { window.dispatchEvent(new CustomEvent('spine:circle-committed')) } catch (e) {}
-  }
-
-  _clearCirclePreview() {
-    if (this._circleFirstDot) { this._circleFirstDot.destroy(); this._circleFirstDot = null }
-    if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
-    this._circleFirst = null
-    if (this.previewLayer) this.previewLayer.batchDraw()
+  // 검수 모드 on/off + 교수님 수정본 주입
+  setEndplateReview(reviewCorners, reviewMode, onCornerMoved) {
+    this._endplateReview = reviewCorners || {}
+    this._endplateReviewMode = !!reviewMode
+    if (onCornerMoved) this._onEndplateCornerMoved = onCornerMoved
+    this._renderAutoEndplate()
   }
 
   // 'E'(마지막 점 취소) — FH 원: 그리는 중인 원만 취소. 완성된 원 삭제는 P(삭제 모드) 담당.

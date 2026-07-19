@@ -4,7 +4,7 @@
    - 랜드마크 불필요. 랜드마크 기반 측정 패널과는 독립.
    ================================================================ */
 
-import { computeSagittalFromPolygons, toCSV, DEFAULT_RANGES } from './auto-endplate.js'
+import { computeSagittalFromPolygons, toCSV, DEFAULT_RANGES, cobbAngle } from './auto-endplate.js'
 
 function currentFileName() {
   if (window.__spineCurrentFile) return window.__spineCurrentFile
@@ -21,6 +21,132 @@ export function initAutoEndplateUI(annotator) {
   const body = mount.querySelector('.ae-body')
   const statusEl = mount.querySelector('.ae-status')
   let lastResult = null
+  // ---- 검수(리뷰) 상태 ----
+  const chkReview = mount.querySelector('.ae-review')
+  const vsel = mount.querySelector('.ae-vsel')
+  const noteV = mount.querySelector('.ae-note-v')
+  const noteImg = mount.querySelector('.ae-note-img')
+  const btnSave = mount.querySelector('.ae-save')
+  const btnExport = mount.querySelector('.ae-export')
+  const btnResetV = mount.querySelector('.ae-reset-v')
+  const savedEl = mount.querySelector('.ae-saved')
+  let review = { corners: {}, notes: {}, imageNote: '' }
+
+  function pushReviewToCanvas() {
+    annotator.setEndplateReview?.(review.corners, chkReview.checked, onCornerMoved)
+  }
+  function onCornerMoved(label, key, xy) {
+    // 자동값을 기준으로 복사한 뒤 해당 코너만 갱신
+    if (!review.corners[label]) {
+      const a = lastResult && lastResult.corners[label]
+      if (!a) return
+      review.corners[label] = { SA: a.SA.slice(), SP: a.SP.slice(), IA: a.IA.slice(), IP: a.IP.slice() }
+    }
+    review.corners[label][key] = xy
+    pushReviewToCanvas()
+    if (lastResult) renderResults(lastResult)
+    markDirty()
+  }
+  function markDirty() { savedEl.textContent = '● 저장 안 됨'; savedEl.className = 'ae-saved dirty' }
+  function markSaved(t) { savedEl.textContent = t || '저장됨'; savedEl.className = 'ae-saved' }
+
+  function refreshVertebraSelect() {
+    const cur = vsel.value
+    vsel.innerHTML = '<option value="">추체 선택…</option>'
+    const list = lastResult ? lastResult.present : []
+    for (const v of list) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = v + (review.corners[v] ? ' ✎' : '') + (review.notes[v] ? ' 💬' : '')
+      vsel.appendChild(o)
+    }
+    if (list.includes(cur)) vsel.value = cur
+  }
+
+  chkReview.addEventListener('change', () => {
+    pushReviewToCanvas()
+    statusEl.textContent = chkReview.checked ? '검수 모드: 코너 점을 드래그해 수정하세요.' : ''
+  })
+  vsel.addEventListener('change', () => { noteV.value = review.notes[vsel.value] || '' })
+  noteV.addEventListener('input', () => {
+    if (!vsel.value) return
+    if (noteV.value.trim()) review.notes[vsel.value] = noteV.value; else delete review.notes[vsel.value]
+    refreshVertebraSelect(); markDirty()
+  })
+  noteImg.addEventListener('input', () => { review.imageNote = noteImg.value; markDirty() })
+  btnResetV.addEventListener('click', () => {
+    const v = vsel.value; if (!v) return
+    delete review.corners[v]
+    pushReviewToCanvas(); refreshVertebraSelect()
+    if (lastResult) renderResults(lastResult)
+    markDirty()
+  })
+
+  async function loadReview() {
+    const fn = currentFileName(); if (!fn) return
+    try {
+      const r = await fetch('/api/review/' + encodeURIComponent(fn), { headers: authHeaders() })
+      const j = await r.json()
+      if (j && j.ok && j.review) {
+        review = { corners: j.review.corners || {}, notes: j.review.notes || {}, imageNote: j.review.imageNote || '' }
+        noteImg.value = review.imageNote
+        markSaved('저장됨 ' + (j.updated_at ? j.updated_at.slice(0, 16).replace('T', ' ') : ''))
+      } else {
+        review = { corners: {}, notes: {}, imageNote: '' }; noteImg.value = ''; savedEl.textContent = ''
+      }
+    } catch (e) { console.warn('review load', e) }
+    pushReviewToCanvas(); refreshVertebraSelect()
+  }
+
+  btnSave.addEventListener('click', async () => {
+    const fn = currentFileName()
+    if (!fn) { statusEl.textContent = '이미지를 먼저 선택하세요.'; return }
+    const payload = {
+      review: {
+        corners: review.corners, notes: review.notes, imageNote: review.imageNote,
+        auto: lastResult ? { angles: lastResult.angles, present: lastResult.present } : null,
+        savedAt: new Date().toISOString(),
+      },
+      reviewer: (window.__spineLabeler || ''),
+    }
+    try {
+      const r = await fetch('/api/review/' + encodeURIComponent(fn), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+      })
+      const j = await r.json()
+      if (j && j.ok) markSaved('저장됨'); else { statusEl.textContent = '저장 실패: ' + (j && j.error || ''); }
+    } catch (e) { statusEl.textContent = '저장 실패: ' + (e && e.message || e) }
+  })
+
+  btnExport.addEventListener('click', () => {
+    const data = {
+      file_name: currentFileName(),
+      auto: lastResult ? { angles: lastResult.angles, segmental: lastResult.segmental, wedge: lastResult.wedge, corners: lastResult.corners } : null,
+      review,
+      reviewed_angles: lastResult ? reviewedAngles(lastResult) : null,
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob); const a = document.createElement('a')
+    a.href = url; a.download = (currentFileName() || 'spine').replace(/\.[^.]+$/, '') + '_review.json'
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+  })
+
+  function authHeaders() {
+    try { const t = localStorage.getItem('spine-annotator:authToken'); return t ? { 'X-Auth-Token': t } : {} } catch { return {} }
+  }
+
+  // 검수본 기준으로 다시 계산한 주요 각도
+  function reviewedAngles(result) {
+    const get = (label) => review.corners[label] || result.corners[label]
+    const SUP = n => { const c = get(n); return c ? [c.SP[0] - c.SA[0], c.SP[1] - c.SA[1]] : null }
+    const INF = n => { const c = get(n); return c ? [c.IP[0] - c.IA[0], c.IP[1] - c.IA[1]] : null }
+    return {
+      LL: cobbAngle(SUP(DEFAULT_RANGES.LL[0]), INF(DEFAULT_RANGES.LL[1])),
+      TK: cobbAngle(SUP(DEFAULT_RANGES.TK[0]), INF(DEFAULT_RANGES.TK[1])),
+      CL: cobbAngle(INF(DEFAULT_RANGES.CL[0]), INF(DEFAULT_RANGES.CL[1])),
+    }
+  }
 
   function run() {
     const polys = (annotator.polygons || []).filter(p => p && p.label && Array.isArray(p.points) && p.points.length >= 8)
@@ -41,6 +167,8 @@ export function initAutoEndplateUI(annotator) {
     renderResults(result)
     if (chkOverlay.checked) drawOverlay(result)
     btnCsv.disabled = false
+    refreshVertebraSelect()
+    pushReviewToCanvas()
   }
 
   function drawOverlay(result) {
@@ -57,11 +185,21 @@ export function initAutoEndplateUI(annotator) {
       ['T1 slope', A.T1_slope, ''],
     ]
     const fmt = v => (v == null || Number.isNaN(v)) ? '—' : (Math.round(v * 10) / 10).toFixed(1) + '°'
+    const hasReview = Object.keys(review.corners).length > 0
+    const rv = hasReview ? reviewedAngles(result) : null
     let html = '<table class="ae-table"><tbody>'
+    if (hasReview) html += '<tr><td></td><td class="ae-val ae-hdr">자동</td><td class="ae-val ae-hdr ae-rev">검수</td></tr>'
     for (const [name, val, range] of main) {
-      html += `<tr><td>${name}${range ? ` <span class="ae-range">${range}</span>` : ''}</td><td class="ae-val">${fmt(val)}</td></tr>`
+      const label = `${name}${range ? ` <span class="ae-range">${range}</span>` : ''}`
+      if (hasReview) {
+        const r = rv[name.startsWith('LL') ? 'LL' : name.startsWith('TK') ? 'TK' : name.startsWith('CL') ? 'CL' : null]
+        html += `<tr><td>${label}</td><td class="ae-val">${fmt(val)}</td><td class="ae-val ae-rev">${r == null ? '—' : fmt(r)}</td></tr>`
+      } else {
+        html += `<tr><td>${label}</td><td class="ae-val">${fmt(val)}</td></tr>`
+      }
     }
     html += '</tbody></table>'
+    if (hasReview) html += `<div class="ae-hint2">✎ 수정된 추체: ${Object.keys(review.corners).join(', ')}</div>`
 
     const segKeys = Object.keys(result.segmental)
     const wedgeKeys = Object.keys(result.wedge)
@@ -96,7 +234,12 @@ export function initAutoEndplateUI(annotator) {
     annotator.clearAutoEndplateOverlay()
     lastResult = null; btnCsv.disabled = true
     body.innerHTML = ''; statusEl.textContent = ''
+    review = { corners: {}, notes: {}, imageNote: '' }
+    noteV.value = ''; noteImg.value = ''; savedEl.textContent = ''
+    refreshVertebraSelect()
+    loadReview()   // 이 이미지의 기존 검수 결과 불러오기
   })
+  loadReview()
 }
 
 function ensurePanel() {
@@ -116,6 +259,24 @@ function ensurePanel() {
     '    <button type="button" class="ae-run">자동 측정 실행</button>' +
     '    <label class="ae-chk"><input type="checkbox" class="ae-overlay" checked> 종판선 표시</label>' +
     '    <button type="button" class="ae-csv" disabled>CSV</button>' +
+    '  </div>' +
+    '  <div class="ae-review-box">' +
+    '    <label class="ae-chk ae-review-toggle"><input type="checkbox" class="ae-review"> 검수 모드 (코너 드래그)</label>' +
+    '    <div class="ae-legend">' +
+    '      <span><i style="background:#39d353"></i>자동 상종판</span><span><i style="background:#e3a008"></i>자동 하종판</span>' +
+    '      <span><i style="background:#4dabf7"></i>검수 상종판</span><span><i style="background:#845ef7"></i>검수 하종판</span>' +
+    '    </div>' +
+    '    <div class="ae-vsel-row">' +
+    '      <select class="ae-vsel"><option value="">추체 선택…</option></select>' +
+    '      <button type="button" class="ae-reset-v" title="이 추체를 자동값으로 되돌리기">되돌리기</button>' +
+    '    </div>' +
+    '    <textarea class="ae-note-v" rows="2" placeholder="선택한 추체 메모 (예: 상종판 한 칸 위)"></textarea>' +
+    '    <textarea class="ae-note-img" rows="2" placeholder="이미지 전체 메모"></textarea>' +
+    '    <div class="ae-controls">' +
+    '      <button type="button" class="ae-save">검수 저장</button>' +
+    '      <button type="button" class="ae-export">JSON</button>' +
+    '      <span class="ae-saved"></span>' +
+    '    </div>' +
     '  </div>' +
     '  <div class="ae-status"></div>' +
     '  <div class="ae-body"></div>' +

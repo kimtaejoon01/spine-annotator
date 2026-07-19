@@ -63,6 +63,51 @@ api.post('/auth/check', async (c) => {
 // GET /api/labels - 모든 파일의 라벨 메타 (목록용)
 // 반환: [{ filename, view_type, labeler_id, polygon_count, updated_at }]
 // ----------------------------------------------------------------
+// ----------------------------------------------------------------
+// 자동 종판 검수(리뷰) API — 교수님 수정본 + 메모
+// ----------------------------------------------------------------
+api.get('/review/:filename', async (c) => {
+  const filename = decodeURIComponent(c.req.param('filename'))
+  try {
+    const row: any = await c.env.DB.prepare('SELECT data_json, reviewer, updated_at FROM endplate_review WHERE filename = ?').bind(filename).first()
+    if (!row) return c.json({ ok: true, review: null })
+    return c.json({ ok: true, review: JSON.parse(row.data_json), reviewer: row.reviewer, updated_at: row.updated_at })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+api.put('/review/:filename', async (c) => {
+  const filename = decodeURIComponent(c.req.param('filename'))
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid json' }, 400) }
+  const data = body && body.review
+  if (!data || typeof data !== 'object') return c.json({ ok: false, error: 'review object required' }, 400)
+  const json = JSON.stringify(data)
+  if (json.length > 2_000_000) return c.json({ ok: false, error: 'review payload too large' }, 400)
+  const now = new Date().toISOString()
+  try {
+    await c.env.DB.prepare(
+      'INSERT INTO endplate_review (filename, data_json, reviewer, updated_at) VALUES (?, ?, ?, ?) ' +
+      'ON CONFLICT(filename) DO UPDATE SET data_json=excluded.data_json, reviewer=excluded.reviewer, updated_at=excluded.updated_at'
+    ).bind(filename, json, String(body.reviewer || ''), now).run()
+    return c.json({ ok: true, updated_at: now })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
+// 전체 검수 결과 내보내기
+api.get('/review', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT filename, data_json, reviewer, updated_at FROM endplate_review ORDER BY updated_at DESC').all()
+    const items = (results || []).map((r: any) => ({ filename: r.filename, reviewer: r.reviewer, updated_at: r.updated_at, review: JSON.parse(r.data_json) }))
+    return c.json({ ok: true, count: items.length, items })
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500)
+  }
+})
+
 api.get('/labels', async (c) => {
   try {
     const result = await c.env.DB.prepare(`
