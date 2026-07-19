@@ -272,6 +272,7 @@ export class SpineAnnotator {
           fill: hasRev ? '#4dabf7' : dotColors[k],
           stroke: reviewMode ? '#ffffff' : undefined, strokeWidth: reviewMode ? 1.5 / s : 0,
           draggable: reviewMode, listening: reviewMode,
+          endplateCorner: true,
         })
         if (reviewMode) {
           c.on('mouseenter', () => { if (this.containerEl) this.containerEl.style.cursor = 'grab' })
@@ -645,6 +646,10 @@ export class SpineAnnotator {
   // ============================================================
   onMouseDown(e) {
     if (this.panMode) return // 스페이스+드래그 모드는 stage가 처리
+
+    // 검수 모드: 코너 드래그가 폴리곤 그리기와 겹치지 않도록 그리기 입력을 막는다.
+    if (this._endplateReviewMode) return
+    if (e.target && e.target.getAttr && e.target.getAttr('endplateCorner')) return
 
     // 캔버스 좌표 → 이미지 좌표 변환
     const pos = this.getImagePos()
