@@ -264,26 +264,59 @@ export class SpineAnnotator {
         if (rev.SA && rev.SP) g.add(line(rev.SA, rev.SP, COL.revSup, false))
         if (rev.IA && rev.IP) g.add(line(rev.IA, rev.IP, COL.revInf, false))
       }
-      const eff = hasRev ? rev : autoC
       const keys = ['SA', 'SP', 'IA', 'IP']
       const dotColors = { SA: '#f85149', SP: '#f0e442', IA: '#d946ef', IP: '#ffffff' }
+
+      // (a) 자동 결과 꼭지점 — 항상 표시. 검수본이 있으면 '속 빈 원'으로 구분.
+      //     절대 잡히지 않도록 listening:false (드래그는 검수본만)
       for (const k of keys) {
-        const pt = eff[k]
+        const pt = autoC[k]
         if (!pt) continue
-        const c = new K.Circle({
-          x: pt[0], y: pt[1], radius: reviewMode ? dotR * 1.8 : dotR,
-          fill: hasRev ? '#4dabf7' : dotColors[k],
-          stroke: reviewMode ? '#ffffff' : undefined, strokeWidth: reviewMode ? 1.5 / s : 0,
-          draggable: reviewMode, listening: reviewMode,
-          endplateCorner: true,
-        })
-        if (reviewMode) {
+        g.add(new K.Circle({
+          x: pt[0], y: pt[1], radius: dotR,
+          fill: hasRev ? undefined : dotColors[k],
+          stroke: hasRev ? dotColors[k] : undefined,
+          strokeWidth: hasRev ? 1.5 / s : 0,
+          listening: false, draggable: false,
+        }))
+      }
+
+      // (b) 검수본 꼭지점 — 있을 때만. 검수 모드면 드래그 가능.
+      if (hasRev) {
+        for (const k of keys) {
+          const pt = rev[k]
+          if (!pt) continue
+          const c = new K.Circle({
+            x: pt[0], y: pt[1], radius: reviewMode ? dotR * 1.8 : dotR * 1.2,
+            fill: '#4dabf7',
+            stroke: reviewMode ? '#ffffff' : undefined, strokeWidth: reviewMode ? 1.5 / s : 0,
+            draggable: reviewMode, listening: reviewMode,
+            endplateCorner: true,
+          })
+          if (reviewMode) {
+            c.on('mouseenter', () => { if (this.containerEl) this.containerEl.style.cursor = 'grab' })
+            c.on('mouseleave', () => { if (this.containerEl) this.containerEl.style.cursor = 'default' })
+            c.on('dragend', () => { const pos = c.position(); this._onEndplateCornerMoved?.(label, k, [pos.x, pos.y]) })
+          }
+          g.add(c)
+        }
+      } else if (reviewMode) {
+        // 아직 교정 안 한 추체: 자동 꼭지점 위치에 '잡을 수 있는' 핸들을 올려둠
+        for (const k of keys) {
+          const pt = autoC[k]
+          if (!pt) continue
+          const c = new K.Circle({
+            x: pt[0], y: pt[1], radius: dotR * 1.8,
+            fill: dotColors[k], stroke: '#ffffff', strokeWidth: 1.5 / s,
+            draggable: true, listening: true, endplateCorner: true, opacity: 0.9,
+          })
           c.on('mouseenter', () => { if (this.containerEl) this.containerEl.style.cursor = 'grab' })
           c.on('mouseleave', () => { if (this.containerEl) this.containerEl.style.cursor = 'default' })
           c.on('dragend', () => { const pos = c.position(); this._onEndplateCornerMoved?.(label, k, [pos.x, pos.y]) })
+          g.add(c)
         }
-        g.add(c)
       }
+      const eff = hasRev ? rev : autoC
       const corners = keys.map(k => eff[k]).filter(Boolean)
       if (label && corners.length) {
         const cx = corners.reduce((a, pp) => a + pp[0], 0) / corners.length
