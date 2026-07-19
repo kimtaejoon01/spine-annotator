@@ -259,6 +259,8 @@ export class SpineAnnotator {
       return Math.max(minR, Math.min(byShape, maxR))
     }
     const fontPx = 12 / s
+    const notes = this._endplateNotes || {}
+    const notesShow = this._endplateNotesShow !== false
     const review = this._endplateReview || {}
     const reviewMode = !!this._endplateReviewMode
     const COL = { autoSup: '#39d353', autoInf: '#e3a008', revSup: '#4dabf7', revInf: '#845ef7' }
@@ -334,10 +336,39 @@ export class SpineAnnotator {
         const cy = corners.reduce((a, pp) => a + pp[1], 0) / corners.length
         g.add(new K.Text({ x: cx, y: cy, text: label, fontSize: fontPx, fill: hasRev ? '#4dabf7' : '#ffd43b', listening: false }))
       }
+
+      // ---- 추체 메모 말풍선 ----
+      const noteText = (notesShow && notes[label]) ? String(notes[label]).trim() : ''
+      if (noteText && corners.length) {
+        const xs = corners.map(pp => pp[0]), ys = corners.map(pp => pp[1])
+        const rightX = Math.max(...xs), midY = (Math.min(...ys) + Math.max(...ys)) / 2
+        const pad = 4 / s
+        const fs = 11 / s
+        const maxChars = 14
+        const lines = []
+        for (let i = 0; i < noteText.length && lines.length < 3; i += maxChars) lines.push(noteText.slice(i, i + maxChars))
+        if (noteText.length > maxChars * 3) lines[2] = lines[2].slice(0, maxChars - 1) + '…'
+        const textW = Math.max(...lines.map(l => l.length)) * fs * 0.62
+        const boxW = textW + pad * 2
+        const boxH = lines.length * fs * 1.3 + pad * 2
+        const bx = rightX + 16 / s
+        const by = midY - boxH / 2
+        g.add(new K.Line({ points: [rightX + 2 / s, midY, bx, midY], stroke: '#ffd43b', strokeWidth: 1 / s, opacity: 0.85, listening: false }))
+        g.add(new K.Rect({ x: bx, y: by, width: boxW, height: boxH, cornerRadius: 4 / s,
+          fill: 'rgba(18,20,26,0.88)', stroke: '#ffd43b', strokeWidth: 1 / s, listening: false }))
+        g.add(new K.Text({ x: bx + pad, y: by + pad, text: lines.join('\n'), fontSize: fs,
+          lineHeight: 1.3, fill: '#ffe8a3', listening: false }))
+      }
     }
     this._autoEndplateGroup = g
     this.autoEndplateLayer.add(g)
     this.autoEndplateLayer.batchDraw()
+  }
+
+  setEndplateNotes(notes, show) {
+    this._endplateNotes = notes || {}
+    this._endplateNotesShow = show !== false
+    this._renderAutoEndplate()
   }
 
   setEndplateReview(reviewCorners, reviewMode, onCornerMoved) {

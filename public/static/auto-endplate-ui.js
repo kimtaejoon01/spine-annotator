@@ -42,12 +42,13 @@ export function initAutoEndplateUI(annotator) {
       chkReview.checked = !!j.reviewMode
       chkAutoRun.checked = j.autoRun !== false   // 기본 켬
       if (typeof j.overlay === 'boolean') chkOverlay.checked = j.overlay
+      if (typeof j.notesShow === 'boolean') chkNotes.checked = j.notesShow
     } catch (e) { chkAutoRun.checked = true }
   }
   function saveSettings() {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-        reviewMode: chkReview.checked, autoRun: chkAutoRun.checked, overlay: chkOverlay.checked,
+        reviewMode: chkReview.checked, autoRun: chkAutoRun.checked, overlay: chkOverlay.checked, notesShow: chkNotes.checked,
       }))
     } catch (e) {}
   }
@@ -55,7 +56,9 @@ export function initAutoEndplateUI(annotator) {
   const snapshot = () => JSON.parse(JSON.stringify(review.corners))
   function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift() }
 
+  const chkNotes = mount.querySelector('.ae-notes-show')
   function pushReviewToCanvas() {
+    annotator.setEndplateNotes?.(review.notes, chkNotes.checked)
     annotator.setEndplateReview?.(review.corners, chkReview.checked, onCornerMoved)
   }
   function onCornerMoved(label, key, xy) {
@@ -100,6 +103,7 @@ export function initAutoEndplateUI(annotator) {
   }
 
   chkAutoRun.addEventListener('change', saveSettings)
+  chkNotes.addEventListener('change', () => { saveSettings(); pushReviewToCanvas() })
   chkOverlay.addEventListener('change', saveSettings)
   chkReview.addEventListener('change', () => {
     saveSettings()
@@ -110,7 +114,7 @@ export function initAutoEndplateUI(annotator) {
   noteV.addEventListener('input', () => {
     if (!vsel.value) return
     if (noteV.value.trim()) review.notes[vsel.value] = noteV.value; else delete review.notes[vsel.value]
-    refreshVertebraSelect(); markDirty()
+    refreshVertebraSelect(); pushReviewToCanvas(); markDirty()
   })
   noteImg.addEventListener('input', () => { review.imageNote = noteImg.value; markDirty() })
   btnResetV.addEventListener('click', () => {
@@ -328,6 +332,7 @@ function ensurePanel() {
     '    <button type="button" class="ae-csv" disabled>CSV</button>' +
     '  </div>' +
     '  <label class="ae-chk ae-auto-run-row"><input type="checkbox" class="ae-autorun"> 이미지 열면 자동 측정 (전역)</label>' +
+    '  <label class="ae-chk ae-auto-run-row"><input type="checkbox" class="ae-notes-show" checked> 메모 말풍선 표시</label>' +
     '  <div class="ae-review-box">' +
     '    <label class="ae-chk ae-review-toggle"><input type="checkbox" class="ae-review"> 검수 모드 (코너 드래그)</label>' +
     '    <div class="ae-legend">' +
