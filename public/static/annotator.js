@@ -312,6 +312,86 @@ export class SpineAnnotator {
     this._renderAutoEndplate()
   }
 
+  onMouseDown(e) {
+    if (this.panMode) return
+    const pos = this.getImagePos()
+    if (!pos) return
+    if (this.tool === 'draw') {
+      if (e.evt.button !== 0) return
+      if (e.target.getAttr('polyId') && !this.drawing) { return }
+      if (this.freehandMode) return
+
+      // 원(circle) 모드: 1번째 클릭 = 가장자리, 2번째 클릭 = 중심 (반경=두 점 거리)
+      if (this.pendingLabel && this.pendingLabelMode === 'circle' && !this.drawing) {
+        const scale = this.stage.scaleX() || 1
+        const color = getRegionColor(this.pendingLabel)
+        if (!this._circleFirst) {
+          this._circleFirst = { x: pos.x, y: pos.y }
+          this._circleFirstDot = new Konva.Circle({ x: pos.x, y: pos.y, radius: 4 / scale, fill: color, listening: false })
+          this._circlePreview = new Konva.Circle({ x: pos.x, y: pos.y, radius: 0, stroke: color, strokeWidth: 2 / scale, dash: [6 / scale, 4 / scale], listening: false })
+          this.previewLayer.add(this._circleFirstDot)
+          this.previewLayer.add(this._circlePreview)
+          this.previewLayer.batchDraw()
+          return
+        }
+        const r = Math.hypot(this._circleFirst.x - pos.x, this._circleFirst.y - pos.y)
+        this._commitCircle(pos.x, pos.y, r)
+        return
+      }
+
+      this.addPoint(pos.x, pos.y)
+    } else if (this.tool === 'edit') {
+      if (e.evt.button !== 0) return
+      if (this.drawing) return
+      if (this.editHover && this.hoveringVertex == null) {
+        const polyId = this.editHover.polyId
+        const insertIdx = this.editHover.insertIdx
+        const { x, y } = this.editHover
+        const poly = this.polygons.find(p => p.id === polyId)
+        if (poly) {
+          poly.points.splice(insertIdx, 0, x, y)
+          this.clearEditHover()
+          this._justInsertedPoint = true
+          this.renderPolygons()
+          this.pushHistory()
+          this.notifyPolygons()
+        }
+      }
+    }
+  }
+
+  onMouseUp(e) {
+    // 자유곡선은 마우스 버튼을 누르고 있을 필요가 없어 별도 처리 없음
+  }
+
+  _commitCircle(cx, cy, r) {
+    if (!(r > 0)) { this._clearCirclePreview(); return }
+    const N = 32, pts = []
+    for (let i = 0; i < N; i++) {
+      const a = (2 * Math.PI * i) / N
+      pts.push(cx + r * Math.cos(a), cy + r * Math.sin(a))
+    }
+    this.polygons.push({
+      id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
+      manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
+    })
+    this._clearCirclePreview()
+    this.pendingLabel = null
+    this.pendingLabelMode = 'polygon'
+    this.renderPolygons()
+    this.pushHistory()
+    this.notifyPolygons()
+    this.updateStatus?.()
+    try { window.dispatchEvent(new CustomEvent('spine:circle-committed')) } catch (e) {}
+  }
+
+  _clearCirclePreview() {
+    if (this._circleFirstDot) { this._circleFirstDot.destroy(); this._circleFirstDot = null }
+    if (this._circlePreview) { this._circlePreview.destroy(); this._circlePreview = null }
+    this._circleFirst = null
+    if (this.previewLayer) this.previewLayer.batchDraw()
+  }
+
   // 'E'(마지막 점 취소) — FH 원: 그리는 중인 원만 취소. 완성된 원 삭제는 P(삭제 모드) 담당.
   cancelOrDeleteLastCircle() {
     if (this._circleFirst) { this._clearCirclePreview(); return true }
