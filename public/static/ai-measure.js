@@ -75,27 +75,48 @@ export function connectedComponents(bin, w, h, minArea = 60) {
   return comps
 }
 
-// 덩어리의 외곽 경계 점들을 추출(경계 픽셀) 후 각도순 정렬 → 폴리곤
-export function componentToPolygon(comp, bin, w, h, step = 1) {
+// 덩어리의 외곽 윤곽선을 '경계 추적(Moore-neighbor tracing)'으로 순서대로 추출
+// (각도 정렬 방식은 오목한 모양에서 별 모양으로 꼬여서 사용하지 않음)
+export function componentToPolygon(comp, bin, w, h, targetPoints = 60) {
   const set = new Set(comp.pixels)
-  const border = []
-  for (const idx of comp.pixels) {
-    const x = idx % w, y = (idx / w) | 0
-    const isBorder =
-      x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
-      !set.has(idx - 1) || !set.has(idx + 1) || !set.has(idx - w) || !set.has(idx + w)
-    if (isBorder) border.push([x, y])
+  const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h && set.has(y * w + x)
+
+  // 시작점: 가장 위쪽 행에서 가장 왼쪽 픽셀
+  let sx = -1, sy = -1
+  for (let y = comp.minY; y <= comp.maxY && sx < 0; y++) {
+    for (let x = comp.minX; x <= comp.maxX; x++) {
+      if (inside(x, y)) { sx = x; sy = y; break }
+    }
   }
-  if (border.length < 8) return null
-  // 중심 기준 각도순 정렬(볼록에 가까운 추체에 적합) + 다운샘플
-  let cx = 0, cy = 0
-  for (const p of border) { cx += p[0]; cy += p[1] }
-  cx /= border.length; cy /= border.length
-  border.sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx))
+  if (sx < 0) return null
+
+  // 8방향 (시계 방향)
+  const N8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
+  const contour = []
+  let cx = sx, cy = sy
+  let dir = 6 // 위쪽에서 진입했다고 가정
+  const maxSteps = comp.pixels.length * 8 + 1000
+  let steps = 0
+  do {
+    contour.push([cx, cy])
+    let found = false
+    // 이전 진행 방향의 반대편부터 시계방향 탐색
+    for (let i = 0; i < 8; i++) {
+      const d = (dir + 6 + i) % 8
+      const nx = cx + N8[d][0], ny = cy + N8[d][1]
+      if (inside(nx, ny)) { cx = nx; cy = ny; dir = d; found = true; break }
+    }
+    if (!found) break
+    steps++
+  } while ((cx !== sx || cy !== sy) && steps < maxSteps)
+
+  if (contour.length < 8) return null
+
+  // 균등 다운샘플 (폴리곤 점 수 제한)
+  const stride = Math.max(1, Math.floor(contour.length / targetPoints))
   const out = []
-  const stride = Math.max(1, Math.round(border.length / 80)) * step
-  for (let i = 0; i < border.length; i += stride) out.push(border[i])
-  return out
+  for (let i = 0; i < contour.length; i += stride) out.push(contour[i])
+  return out.length >= 6 ? out : contour
 }
 
 // 마스크 → 라벨 붙은 폴리곤 배열
@@ -116,4 +137,28 @@ export async function maskToPolygons(blobOrUrl, { startLabel = 'C2', minArea = 6
     polys.push({ label, points: flat, source: 'ai', area: comps[i].area })
   }
   return { polygons: polys, componentCount: comps.length, width: w, height: h }
+}
+
+
+// 마스크 PNG → 색칠된 반투명 캔버스 (오버레이 표시용)
+// 흰색(전경)만 지정 색으로, 나머지는 투명
+export async function maskToColorCanvas(blobOrUrl, { color = [34, 211, 238], threshold = 127, alpha = 110 } = {}) {
+  const img = await loadImage(blobOrUrl)
+  const w = img.naturalWidth || img.width
+  const h = img.naturalHeight || img.height
+  const cv = Object.assign(document.createElement('canvas'), { width: w, height: h })
+  const ctx = cv.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+  const imgData = ctx.getImageData(0, 0, w, h)
+  const d = imgData.data
+  for (let p = 0; p < d.length; p += 4) {
+    const v = (d[p] + d[p + 1] + d[p + 2]) / 3
+    if (v >= threshold && d[p + 3] > 10) {
+      d[p] = color[0]; d[p + 1] = color[1]; d[p + 2] = color[2]; d[p + 3] = alpha
+    } else {
+      d[p + 3] = 0
+    }
+  }
+  ctx.putImageData(imgData, 0, 0)
+  return cv
 }

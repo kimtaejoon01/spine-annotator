@@ -7,7 +7,7 @@
 import { SpineAnnotator } from './annotator.js'
 import { pickFolder, listImageFiles, fileHandleToUrl } from './fs.js'
 import { computeSagittal, DEFAULT_RANGES } from './auto-endplate.js'
-import { maskToPolygons } from './ai-measure.js'
+import { maskToPolygons, maskToColorCanvas } from './ai-measure.js'
 
 const $ = (id) => document.getElementById(id)
 const baseOf = (n) => String(n || '').replace(/\.[^.]+$/, '')
@@ -37,6 +37,7 @@ const state = {
 // ---------------- 초기화 ----------------
 function init() {
   state.annotator = new SpineAnnotator({ container: 'rvStage' })
+  state.annotator.readOnly = true   // 검수 페이지는 그리기/편집 비활성
   window.__rvAnnotator = state.annotator
 
   $('rvConnectImages').addEventListener('click', () => connect('images'))
@@ -132,7 +133,7 @@ async function openImage(item) {
   state.current = item
   $('rvFileName').textContent = item.name
   renderList()
-  state.humanResult = null; state.aiResult = null; state.aiPolys = null
+  state.humanResult = null; state.aiResult = null; state.aiPolys = null; state.aiMaskCanvas = null
   state.review = { human: { corners: {}, notes: {} }, ai: { corners: {}, notes: {} }, imageNote: '' }; state.undo = []
   $('rvNoteV').value = ''; $('rvNoteImg').value = ''; $('rvSaved').textContent = ''
 
@@ -163,9 +164,11 @@ async function loadAiMask(base) {
     const startLabel = state.annotator.startLabel || 'C2'
     const { polygons } = await maskToPolygons(file, { startLabel })
     state.aiPolys = polygons
+    // 표시는 마스크 PNG 자체를 반투명으로 (윤곽선 대신)
+    state.aiMaskCanvas = await maskToColorCanvas(file)
   } catch (e) {
     console.error('[review] mask', e)
-    state.aiPolys = null
+    state.aiPolys = null; state.aiMaskCanvas = null
   }
 }
 
@@ -210,7 +213,7 @@ function applyVisibility() {
   // 사람 폴리곤
   if (a.polyLayer) { a.polyLayer.visible($('rvShowHuman').checked); a.polyLayer.batchDraw() }
   // AI 마스크(윤곽) 오버레이
-  a.setAiMeasurePolygons?.($('rvShowMask').checked ? state.aiPolys : null)
+  a.setAiMaskImage?.($('rvShowMask').checked ? state.aiMaskCanvas : null)
   // 자동측정 오버레이 (사람/AI 중 선택. 둘 다면 AI 우선 표시)
   const useAi = $('rvShowAiMeasure').checked
   const useHuman = $('rvShowHumanMeasure').checked

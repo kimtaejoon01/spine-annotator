@@ -374,6 +374,19 @@ export class SpineAnnotator {
   }
 
   // AI 예측 마스크에서 추출한 폴리곤 오버레이 (검증용, 표시 전용)
+  // AI 마스크 PNG를 반투명 이미지로 겹쳐 표시 (원본 좌표계에 맞춰 스케일)
+  setAiMaskImage(canvasOrNull) {
+    if (this._aiMaskNode) { this._aiMaskNode.destroy(); this._aiMaskNode = null }
+    if (canvasOrNull && this.aiMaskLayer && window.Konva) {
+      const K = window.Konva
+      const sx = (this.imageWidth || canvasOrNull.width) / canvasOrNull.width
+      const sy = (this.imageHeight || canvasOrNull.height) / canvasOrNull.height
+      this._aiMaskNode = new K.Image({ image: canvasOrNull, x: 0, y: 0, scaleX: sx, scaleY: sy, listening: false })
+      this.aiMaskLayer.add(this._aiMaskNode)
+    }
+    if (this.aiMaskLayer) this.aiMaskLayer.batchDraw()
+  }
+
   setAiMeasurePolygons(polys) {
     if (this._aiMeasureGroup) { this._aiMeasureGroup.destroy(); this._aiMeasureGroup = null }
     if (polys && polys.length && this.autoEndplateLayer && window.Konva) {
@@ -751,6 +764,7 @@ export class SpineAnnotator {
   // 마우스 이벤트 핸들러
   // ============================================================
   onMouseDown(e) {
+    if (this.readOnly) return   // 검수 페이지 등: 그리기/편집 입력 차단
     if (this.panMode) return // 스페이스+드래그 모드는 stage가 처리
 
     // 검수 모드: 코너 드래그가 폴리곤 그리기와 겹치지 않도록 '그리기'만 막는다.
