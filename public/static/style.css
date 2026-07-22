@@ -2533,3 +2533,7 @@ kbd {
 .panel-collapsible > summary .panel-action-btn { margin-left: 4px; }
 .ae-auto-run-row { display:flex; align-items:center; gap:5px; margin:3px 0 5px; }
 .ae-status.ae-warn { color: var(--accent-orange,#db7c2f); font-weight:600; }
+.ae-method { font-size:11px; background:var(--bg-tertiary,#21262d); color:var(--text-primary,#e6edf3); border:1px solid var(--border-color,#30363d); border-radius:5px; padding:3px; }
+.ae-quality { font-size:10.5px; color:var(--text-muted,#768390); margin-top:5px; }
+.ae-quality .q-review { color:#ffd43b; } .ae-quality .q-fb { color:#ff6b6b; }
+.ae-flagged { font-size:10.5px; color:var(--text-secondary,#adbac7); line-height:1.5; }

@@ -264,14 +264,22 @@ export class SpineAnnotator {
     const review = this._endplateReview || {}
     const reviewMode = !!this._endplateReviewMode
     const COL = { autoSup: '#39d353', autoInf: '#e3a008', revSup: '#4dabf7', revInf: '#845ef7' }
+    const QUAL = this._endplateQuality || {}
+    // 검증 결과에 따라 자동 종판선 색 변경: ok=기본, review=노랑, fallback=빨강
+    const colFor = (label, base) => {
+      const q = QUAL[label] && QUAL[label].quality
+      if (q === 'review') return '#ffd43b'
+      if (q === 'fallback') return '#ff6b6b'
+      return base
+    }
     const line = (a, b, color, dash) => new K.Line({ points: [a[0], a[1], b[0], b[1]], stroke: color, strokeWidth: dash ? 2.5 : 2, dash: dash ? [10 / s, 5 / s] : undefined, listening: false })
     for (const it of items) {
       const label = it.label
       const rev = review[label]
       const hasRev = !!rev
       const autoC = { SA: it.SA, SP: it.SP, IA: it.IA, IP: it.IP }
-      if (autoC.SA && autoC.SP) { const l = line(autoC.SA, autoC.SP, COL.autoSup, hasRev); g.add(l) }
-      if (autoC.IA && autoC.IP) { const l = line(autoC.IA, autoC.IP, COL.autoInf, hasRev); g.add(l) }
+      if (autoC.SA && autoC.SP) { const l = line(autoC.SA, autoC.SP, colFor(label, COL.autoSup), hasRev); g.add(l) }
+      if (autoC.IA && autoC.IP) { const l = line(autoC.IA, autoC.IP, colFor(label, COL.autoInf), hasRev); g.add(l) }
       if (hasRev) {
         if (rev.SA && rev.SP) g.add(line(rev.SA, rev.SP, COL.revSup, false))
         if (rev.IA && rev.IP) g.add(line(rev.IA, rev.IP, COL.revInf, false))
@@ -364,6 +372,8 @@ export class SpineAnnotator {
     this.autoEndplateLayer.add(g)
     this.autoEndplateLayer.batchDraw()
   }
+
+  setEndplateQuality(q) { this._endplateQuality = q || null; this._renderAutoEndplate() }
 
   setEndplateNotes(notes, show) {
     this._endplateNotes = notes || {}

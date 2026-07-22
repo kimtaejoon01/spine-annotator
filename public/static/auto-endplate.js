@@ -187,3 +187,173 @@ export function toCSV(result, meta = {}) {
   return rows.map(r => r.join(',')).join('\n')
 }
 function fmt(v) { return (v == null || Number.isNaN(v)) ? '' : (Math.round(v * 10) / 10).toString() }
+
+
+// ================================================================
+// v2 (그룹 피팅) + 검증 알고리즘  — Python 코드 A/B 포팅
+// ================================================================
+export const VALIDATION = { MAX_NEIGHBOR_JUMP: 35.0, MIN_PERP_TO_SPINE: 40.0, MAX_WEDGE: 40.0, FRAC: 0.30 }
+
+// 점들의 주방향(최대 분산 방향) — PCA (2x2 공분산 고유벡터)
+function fitLineDir(pts) {
+  const n = pts.length
+  let mx = 0, my = 0
+  for (const p of pts) { mx += p[0]; my += p[1] }
+  mx /= n; my /= n
+  let sxx = 0, sxy = 0, syy = 0
+  for (const p of pts) { const dx = p[0] - mx, dy = p[1] - my; sxx += dx * dx; sxy += dx * dy; syy += dy * dy }
+  sxx /= n; sxy /= n; syy /= n
+  // 2x2 대칭행렬 최대 고유값의 고유벡터
+  const tr = sxx + syy, det = sxx * syy - sxy * sxy
+  const lam = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det))
+  let v = Math.abs(sxy) > 1e-12 ? [lam - syy, sxy] : (sxx >= syy ? [1, 0] : [0, 1])
+  v = unit(v)
+  return v[0] >= 0 ? v : [-v[0], -v[1]]
+}
+
+// minAreaRect 기반 전후축/상하축
+function rectAxes(points, isC2) {
+  const box = minAreaRect(points)
+  const edges = [[box[0], box[1]], [box[1], box[2]], [box[2], box[3]], [box[3], box[0]]]
+  const len = edges.map(([a, b]) => norm(sub(a, b)))
+  const i = isC2 ? (len[0] <= len[1] ? 0 : 1) : (len[0] >= len[1] ? 0 : 1)
+  let ap = unit(sub(edges[i][1], edges[i][0]))
+  if (ap[0] < 0) ap = [-ap[0], -ap[1]]
+  let si = [-ap[1], ap[0]]
+  if (si[1] < 0) si = [-si[0], -si[1]]
+  return { ap, si }
+}
+
+// 방향 벡터를 앞(+x) 쪽으로 통일
+function orientAnterior(v) { return v[0] < 0 ? [-v[0], -v[1]] : v }
+
+// 두 방향의 예각(0~90)
+export function angleBetweenLines(v1, v2) {
+  const c = Math.abs(dot(unit(v1), unit(v2)))
+  return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI
+}
+// 수평 기준 기울기(0=수평, 90=수직)
+export function tiltH(v) {
+  if (!v) return NaN
+  let a = Math.abs(Math.atan2(v[1], v[0]) * 180 / Math.PI)
+  return a > 90 ? 180 - a : a
+}
+
+// ---- v1: 4코너 극점 ----
+export function endplateA(points, isC2, useYAxis) {
+  let ap, si
+  if (useYAxis) { ap = [1, 0]; si = [0, 1] } else { ({ ap, si } = rectAxes(points, isC2)) }
+  const center = mean(points)
+  const aArr = [], sArr = []
+  for (const p of points) { const r = sub(p, center); aArr.push(dot(r, ap)); sArr.push(dot(r, si)) }
+  const aMid = median(aArr), sMid = median(sArr)
+  const pick = (cond, score) => {
+    let bi = -1, bs = -Infinity
+    for (let i = 0; i < points.length; i++) { if (!cond(aArr[i], sArr[i])) continue; const v = score(aArr[i], sArr[i]); if (v > bs) { bs = v; bi = i } }
+    if (bi < 0) for (let i = 0; i < points.length; i++) { const v = score(aArr[i], sArr[i]); if (v > bs) { bs = v; bi = i } }
+    return points[bi]
+  }
+  const SA = pick((a, s) => a >= aMid && s <= sMid, (a, s) => a - s)
+  const SP = pick((a, s) => a < aMid && s <= sMid, (a, s) => -a - s)
+  const IA = pick((a, s) => a >= aMid && s > sMid, (a, s) => a + s)
+  const IP = pick((a, s) => a < aMid && s > sMid, (a, s) => -a + s)
+  return { SA, SP, IA, IP, supVec: orientAnterior(unit(sub(SP, SA))), infVec: orientAnterior(unit(sub(IP, IA))) }
+}
+
+// ---- v2: 종판 그룹 피팅 ----
+export function endplateB(points, isC2, useYAxis, frac) {
+  frac = frac || VALIDATION.FRAC
+  let si
+  if (useYAxis) { si = [0, 1] } else { ({ si } = rectAxes(points, isC2)) }
+  const center = mean(points)
+  const sArr = points.map(p => dot(sub(p, center), si))
+  const sMin = Math.min(...sArr), sMax = Math.max(...sArr), span = sMax - sMin
+  let top = points.filter((p, i) => sArr[i] <= sMin + frac * span)
+  let bot = points.filter((p, i) => sArr[i] >= sMax - frac * span)
+  const order = sArr.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0]).map(x => x[1])
+  if (top.length < 2) top = order.slice(0, 3).map(i => points[i])
+  if (bot.length < 2) bot = order.slice(-3).map(i => points[i])
+  const supVec = orientAnterior(fitLineDir(top))
+  const infVec = orientAnterior(fitLineDir(bot))
+  // 오버레이/검수 호환을 위해 그룹의 양 끝점을 코너로 변환
+  const ends = (grp, v) => {
+    const proj = grp.map(p => dot(p, v))
+    const iMin = proj.indexOf(Math.min(...proj)), iMax = proj.indexOf(Math.max(...proj))
+    return [grp[iMax], grp[iMin]]   // [앞(+), 뒤(-)]
+  }
+  const [SA, SP] = ends(top, supVec)
+  const [IA, IP] = ends(bot, infVec)
+  return { SA, SP, IA, IP, supVec, infVec, supPts: top, infPts: bot }
+}
+
+// ---- 검증 + y축 폴백 ----
+// signals >= 2 → y축 폴백 재계산(quality 'fallback'), ==1 → 'review', 0 → 'ok'
+export function validateAndFix(method, vertsPts, isC2Map, opts = {}) {
+  const fit = (pts, isC2, useY) => method === 'v2'
+    ? endplateB(pts, isC2, useY, opts.frac)
+    : endplateA(pts, isC2, useY)
+  const present = ORDER.filter(n => vertsPts[n])
+  const raw = {}
+  const centers = {}
+  for (const n of present) { raw[n] = fit(vertsPts[n], !!isC2Map[n], false); centers[n] = mean(vertsPts[n]) }
+  const out = {}
+  for (let i = 0; i < present.length; i++) {
+    const n = present[i]
+    let r = raw[n]
+    let signals = 0
+    const reasons = []
+    // 1) 이웃 종판각 급변
+    const nb = []
+    for (const j of [i - 1, i + 1]) if (j >= 0 && j < present.length) nb.push(tiltH(raw[present[j]].infVec))
+    if (nb.length) {
+      const med = median(nb)
+      if (Math.abs(tiltH(r.infVec) - med) > VALIDATION.MAX_NEIGHBOR_JUMP) { signals++; reasons.push('이웃과 각도 급변') }
+    }
+    // 2) 척추 진행축과의 수직성 (C2 양옆으로 잡히는 케이스 검출)
+    if (i > 0 && i < present.length - 1) {
+      const spineDir = sub(centers[present[i + 1]], centers[present[i - 1]])
+      if (angleBetweenLines(r.infVec, spineDir) < VALIDATION.MIN_PERP_TO_SPINE) { signals++; reasons.push('척추축과 나란함') }
+    }
+    // 3) 추체 내 상·하 종판 모순
+    if (Math.abs(tiltH(r.supVec) - tiltH(r.infVec)) > VALIDATION.MAX_WEDGE) { signals++; reasons.push('상·하 종판 모순') }
+
+    let quality = 'ok'
+    if (signals >= 2) { r = fit(vertsPts[n], !!isC2Map[n], true); quality = 'fallback' }
+    else if (signals === 1) quality = 'review'
+    out[n] = { ...r, quality, reasons }
+  }
+  return out
+}
+
+// ---- 통합 계산 (method: 'v1' | 'v2') ----
+export function computeSagittal(polygons, ranges = DEFAULT_RANGES, opts = {}) {
+  const method = opts.method || 'v1'
+  const vertsPts = {}, isC2Map = {}
+  for (const p of polygons) {
+    if (!p.label || !ORDER.includes(p.label)) continue
+    const pts = polyToPoints(p.points)
+    if (pts.length < 4) continue
+    vertsPts[p.label] = pts
+    isC2Map[p.label] = p.label === 'C2'
+  }
+  const fits = validateAndFix(method, vertsPts, isC2Map, opts)
+  const corners = {}
+  const quality = {}
+  for (const n in fits) {
+    corners[n] = { SA: fits[n].SA, SP: fits[n].SP, IA: fits[n].IA, IP: fits[n].IP }
+    quality[n] = { quality: fits[n].quality, reasons: fits[n].reasons }
+  }
+  const SUP = n => fits[n] ? fits[n].supVec : null
+  const INF = n => fits[n] ? fits[n].infVec : null
+  const angles = {
+    LL: cobbAngle(SUP(ranges.LL[0]), INF(ranges.LL[1])),
+    TK: cobbAngle(SUP(ranges.TK[0]), INF(ranges.TK[1])),
+    CL: cobbAngle(INF(ranges.CL[0]), INF(ranges.CL[1])),
+    T1_slope: tiltH(SUP('T1')),
+  }
+  const present = ORDER.filter(n => fits[n])
+  const segmental = {}, wedge = {}
+  for (let i = 0; i + 1 < present.length; i++) segmental[`${present[i]}_${present[i + 1]}`] = cobbAngle(INF(present[i]), SUP(present[i + 1]))
+  for (const n of present) wedge[n] = Math.abs(tiltH(fits[n].supVec) - tiltH(fits[n].infVec))
+  return { corners, angles, segmental, wedge, present, quality, method }
+}

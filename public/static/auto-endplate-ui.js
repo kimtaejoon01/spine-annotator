@@ -4,7 +4,7 @@
    - 랜드마크 불필요. 랜드마크 기반 측정 패널과는 독립.
    ================================================================ */
 
-import { computeSagittalFromPolygons, toCSV, DEFAULT_RANGES, cobbAngle } from './auto-endplate.js'
+import { computeSagittal, toCSV, DEFAULT_RANGES, cobbAngle } from './auto-endplate.js'
 
 function currentFileName() {
   // 앱 상태(state.filename)가 가장 정확. 없으면 전역/DOM 폴백.
@@ -43,12 +43,13 @@ export function initAutoEndplateUI(annotator) {
       chkAutoRun.checked = j.autoRun !== false   // 기본 켬
       if (typeof j.overlay === 'boolean') chkOverlay.checked = j.overlay
       if (typeof j.notesShow === 'boolean') chkNotes.checked = j.notesShow
+      if (j.method === 'v1' || j.method === 'v2') selMethod.value = j.method
     } catch (e) { chkAutoRun.checked = true }
   }
   function saveSettings() {
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-        reviewMode: chkReview.checked, autoRun: chkAutoRun.checked, overlay: chkOverlay.checked, notesShow: chkNotes.checked,
+        reviewMode: chkReview.checked, autoRun: chkAutoRun.checked, overlay: chkOverlay.checked, notesShow: chkNotes.checked, method: selMethod.value,
       }))
     } catch (e) {}
   }
@@ -57,8 +58,10 @@ export function initAutoEndplateUI(annotator) {
   function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 50) undoStack.shift() }
 
   const chkNotes = mount.querySelector('.ae-notes-show')
+  const selMethod = mount.querySelector('.ae-method')
   function pushReviewToCanvas() {
     annotator.setEndplateNotes?.(review.notes, chkNotes.checked)
+    annotator.setEndplateQuality?.(lastResult ? lastResult.quality : null)
     annotator.setEndplateReview?.(review.corners, chkReview.checked, onCornerMoved)
   }
   function onCornerMoved(label, key, xy) {
@@ -103,6 +106,7 @@ export function initAutoEndplateUI(annotator) {
   }
 
   chkAutoRun.addEventListener('change', saveSettings)
+  selMethod.addEventListener('change', () => { saveSettings(); run() })
   chkNotes.addEventListener('change', () => { saveSettings(); pushReviewToCanvas() })
   chkOverlay.addEventListener('change', saveSettings)
   chkReview.addEventListener('change', () => {
@@ -205,7 +209,7 @@ export function initAutoEndplateUI(annotator) {
     }
     let result
     try {
-      result = computeSagittalFromPolygons(polys, DEFAULT_RANGES)
+      result = computeSagittal(polys, DEFAULT_RANGES, { method: selMethod.value })
     } catch (e) {
       console.error('[auto-endplate]', e)
       statusEl.textContent = '계산 실패: ' + (e && e.message || e)
@@ -250,6 +254,18 @@ export function initAutoEndplateUI(annotator) {
     }
     html += '</tbody></table>'
     if (hasReview) html += `<div class="ae-hint2">✎ 수정된 추체: ${Object.keys(review.corners).join(', ')}</div>`
+    // 품질 요약 (검증 알고리즘 결과)
+    if (result.quality) {
+      const cnt = { ok: 0, review: 0, fallback: 0 }
+      const flagged = []
+      for (const k in result.quality) {
+        const q = result.quality[k].quality
+        cnt[q] = (cnt[q] || 0) + 1
+        if (q !== 'ok') flagged.push(`${k}(${q === 'fallback' ? '축보정' : '확인'}: ${result.quality[k].reasons.join(', ')})`)
+      }
+      html += `<div class="ae-quality">정상 ${cnt.ok} · <span class="q-review">확인필요 ${cnt.review}</span> · <span class="q-fb">축보정 ${cnt.fallback}</span> <span class="ae-range">(${result.method})</span></div>`
+      if (flagged.length) html += `<details class="ae-details"><summary>의심 추체 ${flagged.length}</summary><div class="ae-flagged">${flagged.join('<br>')}</div></details>`
+    }
 
     const segKeys = Object.keys(result.segmental)
     const wedgeKeys = Object.keys(result.wedge)
@@ -333,6 +349,7 @@ function ensurePanel() {
     '<div class="panel ae-panel">' +
     '  <div class="panel-title"><i class="fas fa-ruler-combined"></i> 폴리곤 자동 측정</div>' +
     '  <div class="ae-controls">' +
+    '    <select class="ae-method" title="측정 알고리즘"><option value="v1">v1 4코너</option><option value="v2">v2 종판피팅</option></select>' +
     '    <button type="button" class="ae-run">자동 측정 실행</button>' +
     '    <label class="ae-chk"><input type="checkbox" class="ae-overlay" checked> 종판선 표시</label>' +
     '    <button type="button" class="ae-csv" disabled>CSV</button>' +
