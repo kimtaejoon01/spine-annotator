@@ -5,6 +5,8 @@
    ================================================================ */
 
 import { computeSagittal, toCSV, DEFAULT_RANGES, cobbAngle } from './auto-endplate.js'
+import { maskToPolygons } from './ai-measure.js'
+import { pickFolder, listImageFiles, findFileByName } from './fs.js'
 
 function currentFileName() {
   // 앱 상태(state.filename)가 가장 정확. 없으면 전역/DOM 폴백.
@@ -59,6 +61,84 @@ export function initAutoEndplateUI(annotator) {
 
   const chkNotes = mount.querySelector('.ae-notes-show')
   const selMethod = mount.querySelector('.ae-method')
+  // ---- AI 예측 마스크 ----
+  const btnAiFolder = mount.querySelector('.ae-ai-folder')
+  const btnAiRun = mount.querySelector('.ae-ai-run')
+  const chkAiOverlay = mount.querySelector('.ae-ai-overlay')
+  const aiStatus = mount.querySelector('.ae-ai-status')
+  let aiDirHandle = null
+  let aiFileMap = new Map()   // baseName -> fileHandle
+
+  const baseOf = (name) => String(name || '').replace(/\.[^.]+$/, '')
+  // 예측 마스크 파일명에서 원본 base 추출: {base}_pred_mask.png 등
+  const predBase = (name) => baseOf(name).replace(/_(pred_mask|pred|mask|predmask)$/i, '')
+
+  btnAiFolder.addEventListener('click', async () => {
+    try {
+      const handle = await pickFolder()
+      if (!handle) return
+      aiDirHandle = handle
+      const files = await listImageFiles(handle)
+      aiFileMap = new Map()
+      for (const f of files) aiFileMap.set(predBase(f.name), f.handle || f)
+      aiStatus.textContent = `연결됨: ${aiFileMap.size}개 예측 마스크`
+      aiStatus.classList.remove('ae-warn')
+      updateAiAvailability()
+    } catch (e) {
+      aiStatus.textContent = '폴더 연결 실패: ' + (e && e.message || e)
+    }
+  })
+
+  function currentAiHandle() {
+    const b = baseOf(currentFileName())
+    return b ? aiFileMap.get(b) || null : null
+  }
+  function updateAiAvailability() {
+    const h = currentAiHandle()
+    btnAiRun.disabled = !h
+    if (!aiFileMap.size) { aiStatus.textContent = '폴더 미연결'; return }
+    aiStatus.textContent = h
+      ? `이 이미지의 예측 마스크 있음 (${aiFileMap.size}개 연결)`
+      : `이 이미지는 예측 마스크 없음 — 테스트셋이 아닐 수 있습니다 (${aiFileMap.size}개 연결)`
+    aiStatus.classList.toggle('ae-warn', !h)
+  }
+
+  btnAiRun.addEventListener('click', async () => {
+    const h = currentAiHandle()
+    if (!h) return
+    aiStatus.textContent = 'AI 마스크 분석 중…'
+    try {
+      const file = await (h.getFile ? h.getFile() : h)
+      const startLabel = (annotator.startLabel || 'C2')
+      const { polygons, componentCount } = await maskToPolygons(file, { startLabel })
+      if (polygons.length < 2) { aiStatus.textContent = `추체를 2개 이상 찾지 못했습니다 (덩어리 ${componentCount}개)`; return }
+      const result = computeSagittal(polygons, DEFAULT_RANGES, { method: selMethod.value })
+      lastResult = result
+      lastSource = 'ai'
+      statusEl.textContent = `AI 마스크 기준 측정: ${result.present.length}개 추체 (${selMethod.value})`
+      renderResults(result)
+      if (chkOverlay.checked) drawOverlay(result)
+      refreshVertebraSelect()
+      pushReviewToCanvas()
+      btnCsv.disabled = false
+      aiStatus.textContent = `완료: 덩어리 ${componentCount}개 → 추체 ${polygons.length}개`
+      aiStatus.classList.remove('ae-warn')
+      if (chkAiOverlay.checked) showAiMaskOverlay(polygons)
+      else annotator.setAiMeasurePolygons?.(null)
+    } catch (e) {
+      console.error('[ai-measure]', e)
+      aiStatus.textContent = 'AI 측정 실패: ' + (e && e.message || e)
+      aiStatus.classList.add('ae-warn')
+    }
+  })
+
+  chkAiOverlay.addEventListener('change', () => {
+    if (!chkAiOverlay.checked) annotator.setAiMeasurePolygons?.(null)
+  })
+  function showAiMaskOverlay(polys) { annotator.setAiMeasurePolygons?.(polys) }
+
+  let lastSource = 'human'
+
   function pushReviewToCanvas() {
     annotator.setEndplateNotes?.(review.notes, chkNotes.checked)
     annotator.setEndplateQuality?.(lastResult ? lastResult.quality : null)
@@ -328,6 +408,7 @@ export function initAutoEndplateUI(annotator) {
     undoStack.length = 0
     noteV.value = ''; noteImg.value = ''; savedEl.textContent = ''
     refreshVertebraSelect()
+    updateAiAvailability()
     scheduleAutoRun()   // 이미지 전환 후에도 자동 실행 시도
   })
 
@@ -356,6 +437,15 @@ function ensurePanel() {
     '  </div>' +
     '  <label class="ae-chk ae-auto-run-row"><input type="checkbox" class="ae-autorun"> 이미지 열면 자동 측정 (전역)</label>' +
     '  <label class="ae-chk ae-auto-run-row"><input type="checkbox" class="ae-notes-show" checked> 메모 말풍선 표시</label>' +
+    '  <div class="ae-ai-box">' +
+    '    <div class="ae-sub-title">AI 예측 마스크 (테스트셋)</div>' +
+    '    <div class="ae-controls">' +
+    '      <button type="button" class="ae-ai-folder">폴더 연결</button>' +
+    '      <button type="button" class="ae-ai-run" disabled>AI로 측정</button>' +
+    '      <label class="ae-chk"><input type="checkbox" class="ae-ai-overlay"> 마스크 겹쳐보기</label>' +
+    '    </div>' +
+    '    <div class="ae-ai-status">폴더 미연결</div>' +
+    '  </div>' +
     '  <div class="ae-review-box">' +
     '    <label class="ae-chk ae-review-toggle"><input type="checkbox" class="ae-review"> 검수 모드 (코너 드래그)</label>' +
     '    <div class="ae-legend">' +

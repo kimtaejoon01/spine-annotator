@@ -373,6 +373,24 @@ export class SpineAnnotator {
     this.autoEndplateLayer.batchDraw()
   }
 
+  // AI 예측 마스크에서 추출한 폴리곤 오버레이 (검증용, 표시 전용)
+  setAiMeasurePolygons(polys) {
+    if (this._aiMeasureGroup) { this._aiMeasureGroup.destroy(); this._aiMeasureGroup = null }
+    if (polys && polys.length && this.autoEndplateLayer && window.Konva) {
+      const K = window.Konva
+      const g = new K.Group({ listening: false })
+      const sc = (this.stage && this.stage.scaleX()) || 1
+      for (const p of polys) {
+        g.add(new K.Line({ points: p.points, closed: true, stroke: '#22d3ee', strokeWidth: 1.5 / sc,
+          fill: 'rgba(34,211,238,0.12)', listening: false }))
+      }
+      this._aiMeasureGroup = g
+      this.autoEndplateLayer.add(g)
+      g.moveToBottom()
+    }
+    if (this.autoEndplateLayer) this.autoEndplateLayer.batchDraw()
+  }
+
   setEndplateQuality(q) { this._endplateQuality = q || null; this._renderAutoEndplate() }
 
   setEndplateNotes(notes, show) {
@@ -1253,9 +1271,10 @@ export class SpineAnnotator {
     vertebrae.sort((a, b) => a._centroidY - b._centroidY)
 
     let baseIdx = -1
+    let anchorYIdx = -1
     if (anchorId != null && LABELS.includes(anchorLabel)) {
       const yIdx = vertebrae.findIndex(p => p.id === anchorId)
-      if (yIdx >= 0) baseIdx = LABELS.indexOf(anchorLabel) - yIdx
+      if (yIdx >= 0) { baseIdx = LABELS.indexOf(anchorLabel) - yIdx; anchorYIdx = yIdx }
     }
 
     if (baseIdx < 0) {
@@ -1277,7 +1296,10 @@ export class SpineAnnotator {
     baseIdx = Math.max(0, Math.min(baseIdx, LABELS.length - 1))
 
     let changed = false
-    for (let i = 0; i < vertebrae.length; i++) {
+    // 사용자가 특정 추체의 라벨을 바꾼 경우(anchor), 그 추체와 '아래쪽'만 다시 매긴다.
+    // 위쪽(이미 확정된 상위 추체)은 건드리지 않는다.
+    const startI = anchorYIdx >= 0 ? anchorYIdx : 0
+    for (let i = startI; i < vertebrae.length; i++) {
       const next = LABELS[baseIdx + i]
       if (!next) break
       const idx = LABELS.indexOf(vertebrae[i].label)
@@ -1286,7 +1308,9 @@ export class SpineAnnotator {
         changed = true
       }
     }
-    if (LABELS[baseIdx]) this.startLabel = LABELS[baseIdx]
+    const topLabel = vertebrae[0] && vertebrae[0].label
+    if (LABELS.includes(topLabel)) this.startLabel = topLabel
+    else if (LABELS[baseIdx]) this.startLabel = LABELS[baseIdx]
 
     // Keep internal order consistent with visual top-to-bottom order while preserving non-vertebra polygons.
     const nonVertebrae = this.polygons.filter(p => !vertebrae.includes(p))
