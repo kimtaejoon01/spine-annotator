@@ -2578,3 +2578,4 @@ kbd {
 .rv-saved { font-size:10.5px; color:var(--text-muted,#768390); }
 .rv-saved.dirty { color:var(--accent-orange,#db7c2f); }
 .rv-review-tag { font-size:11px; color:var(--accent-blue,#58a6ff); font-weight:600; margin-bottom:5px; }
+.rv-needs-perm { border-color: var(--accent-orange,#db7c2f) !important; color: var(--accent-orange,#db7c2f) !important; }

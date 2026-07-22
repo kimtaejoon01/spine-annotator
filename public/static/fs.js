@@ -201,3 +201,31 @@ export async function findFileByName(dirHandle, name) {
     return null
   }
 }
+
+
+// ---- 임의 키로 폴더 핸들 저장/복원 (검수 페이지처럼 폴더를 여러 개 쓸 때) ----
+export async function pickFolderAs(key, opts = {}) {
+  if (!isSupported()) throw new Error('이 브라우저는 폴더 연결을 지원하지 않습니다. Chrome 또는 Edge를 사용해주세요.')
+  try {
+    const handle = await window.showDirectoryPicker({ id: opts.id || key, mode: 'read', startIn: opts.startIn || 'pictures' })
+    await idbSet(key, handle)
+    return handle
+  } catch (err) {
+    if (err.name === 'AbortError') return null
+    throw err
+  }
+}
+
+export async function restoreFolderAs(key) {
+  try {
+    const handle = await idbGet(key)
+    if (!handle) return null
+    const perm = await queryPermission(handle)
+    if (perm === 'granted') return handle
+    return { handle, needsPermission: true }
+  } catch (e) { return null }
+}
+
+export async function forgetFolderAs(key) {
+  try { await idbSet(key, null) } catch (e) {}
+}
