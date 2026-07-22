@@ -25,7 +25,12 @@ const state = {
   humanResult: null,
   aiResult: null,
   aiPolys: null,
-  review: { corners: {}, notes: {}, imageNote: '' },
+  // 검수 데이터를 '사람 자동측정용'과 'AI 자동측정용'으로 분리 보관
+  review: {
+    human: { corners: {}, notes: {} },
+    ai: { corners: {}, notes: {} },
+    imageNote: '',
+  },
   undo: [],
 }
 
@@ -39,14 +44,19 @@ function init() {
   $('rvSearch').addEventListener('input', renderList)
   $('rvMethod').addEventListener('change', () => { runMeasures() })
 
-  for (const id of ['rvShowHuman', 'rvShowMask', 'rvShowHumanMeasure', 'rvShowAiMeasure']) {
+  for (const id of ['rvShowHuman', 'rvShowMask', 'rvShowHumanMeasure']) {
     $(id).addEventListener('change', applyVisibility)
   }
+  // 측정 대상 전환 시 검수 데이터도 그쪽 것으로 전환
+  $('rvShowAiMeasure').addEventListener('change', () => {
+    applyVisibility(); refreshVsel()
+    $('rvNoteV').value = bucket().notes[$('rvVsel').value] || ''
+  })
   $('rvReview').addEventListener('change', pushReview)
   $('rvPrev').addEventListener('click', () => step(-1))
   $('rvNext').addEventListener('click', () => step(1))
 
-  $('rvVsel').addEventListener('change', () => { $('rvNoteV').value = state.review.notes[$('rvVsel').value] || '' })
+  $('rvVsel').addEventListener('change', () => { $('rvNoteV').value = bucket().notes[$('rvVsel').value] || '' })
   $('rvNoteV').addEventListener('input', onNoteInput)
   $('rvNoteImg').addEventListener('input', () => { state.review.imageNote = $('rvNoteImg').value; dirty() })
   $('rvResetV').addEventListener('click', resetVertebra)
@@ -123,7 +133,7 @@ async function openImage(item) {
   $('rvFileName').textContent = item.name
   renderList()
   state.humanResult = null; state.aiResult = null; state.aiPolys = null
-  state.review = { corners: {}, notes: {}, imageNote: '' }; state.undo = []
+  state.review = { human: { corners: {}, notes: {} }, ai: { corners: {}, notes: {} }, imageNote: '' }; state.undo = []
   $('rvNoteV').value = ''; $('rvNoteImg').value = ''; $('rvSaved').textContent = ''
 
   const res = await fileHandleToUrl(item.handle)
@@ -215,42 +225,51 @@ function applyVisibility() {
 }
 
 // ---------------- 검수 (드래그/메모) ----------------
+function activeSource() { return $('rvShowAiMeasure').checked ? 'ai' : 'human' }
+function bucket() { return state.review[activeSource()] }
 function activeResult() {
   return $('rvShowAiMeasure').checked ? state.aiResult : state.humanResult
 }
 function pushReview() {
   const a = state.annotator
-  a.setEndplateNotes?.(state.review.notes, true)
-  a.setEndplateReview?.(state.review.corners, $('rvReview').checked, onCornerMoved)
+  const b = bucket()
+  a.setEndplateNotes?.(b.notes, true)
+  a.setEndplateReview?.(b.corners, $('rvReview').checked, onCornerMoved)
+  const tag = activeSource() === 'ai' ? 'AI' : '사람'
+  const el = $('rvReviewTag'); if (el) el.textContent = `검수 대상: ${tag} 자동측정`
 }
 function onCornerMoved(label, key, xy) {
-  state.undo.push(JSON.parse(JSON.stringify(state.review.corners)))
+  const src = activeSource(), b = bucket()
+  state.undo.push({ src, corners: JSON.parse(JSON.stringify(b.corners)) })
   if (state.undo.length > 50) state.undo.shift()
   const r = activeResult()
-  if (!state.review.corners[label]) {
+  if (!b.corners[label]) {
     const c = r && r.corners[label]
     if (!c) return
-    state.review.corners[label] = { SA: c.SA.slice(), SP: c.SP.slice(), IA: c.IA.slice(), IP: c.IP.slice() }
+    b.corners[label] = { SA: c.SA.slice(), SP: c.SP.slice(), IA: c.IA.slice(), IP: c.IP.slice() }
   }
-  state.review.corners[label][key] = xy
+  b.corners[label][key] = xy
   pushReview(); refreshVsel(); dirty()
 }
 function undo() {
   if (!state.undo.length) return
-  state.review.corners = state.undo.pop()
+  const last = state.undo.pop()
+  state.review[last.src].corners = last.corners
   pushReview(); refreshVsel(); dirty()
 }
 function resetVertebra() {
   const v = $('rvVsel').value; if (!v) return
-  state.undo.push(JSON.parse(JSON.stringify(state.review.corners)))
-  delete state.review.corners[v]
+  const src = activeSource(), b = bucket()
+  state.undo.push({ src, corners: JSON.parse(JSON.stringify(b.corners)) })
+  delete b.corners[v]
   pushReview(); refreshVsel(); dirty()
 }
 function onNoteInput() {
   const v = $('rvVsel').value
   if (!v) { $('rvSaved').textContent = '⚠ 추체를 먼저 선택하세요'; return }
   const t = $('rvNoteV').value
-  if (t.trim()) state.review.notes[v] = t; else delete state.review.notes[v]
+  const b = bucket()
+  if (t.trim()) b.notes[v] = t; else delete b.notes[v]
   pushReview(); refreshVsel(); dirty()
 }
 function refreshVsel() {
@@ -260,7 +279,8 @@ function refreshVsel() {
   for (const v of (r ? r.present : [])) {
     const o = document.createElement('option')
     o.value = v
-    o.textContent = v + (state.review.corners[v] ? ' ✎' : '') + (state.review.notes[v] ? ' 💬' : '')
+    const b = bucket()
+    o.textContent = v + (b.corners[v] ? ' ✎' : '') + (b.notes[v] ? ' 💬' : '')
     sel.appendChild(o)
   }
   if (r && r.present.includes(cur)) sel.value = cur
@@ -272,7 +292,21 @@ async function loadReview(filename) {
     const r = await fetch('/api/review/' + encodeURIComponent(filename), { headers: authHeaders() })
     const j = await r.json()
     if (j && j.ok && j.review) {
-      state.review = { corners: j.review.corners || {}, notes: j.review.notes || {}, imageNote: j.review.imageNote || '' }
+      const rv = j.review
+      if (rv.human || rv.ai) {
+        state.review = {
+          human: { corners: (rv.human && rv.human.corners) || {}, notes: (rv.human && rv.human.notes) || {} },
+          ai: { corners: (rv.ai && rv.ai.corners) || {}, notes: (rv.ai && rv.ai.notes) || {} },
+          imageNote: rv.imageNote || '',
+        }
+      } else {
+        // 예전 형식(구분 없음) → 사람용으로 이관
+        state.review = {
+          human: { corners: rv.corners || {}, notes: rv.notes || {} },
+          ai: { corners: {}, notes: {} },
+          imageNote: rv.imageNote || '',
+        }
+      }
       $('rvNoteImg').value = state.review.imageNote
       $('rvSaved').textContent = '저장됨'; $('rvSaved').className = 'rv-saved'
     }
@@ -283,8 +317,9 @@ async function saveReview() {
   if (!state.current) return
   const payload = {
     review: {
-      corners: state.review.corners, notes: state.review.notes, imageNote: state.review.imageNote,
-      source: $('rvShowAiMeasure').checked ? 'ai' : 'human',
+      human: state.review.human,
+      ai: state.review.ai,
+      imageNote: state.review.imageNote,
       method: $('rvMethod').value,
       auto: state.humanResult ? { angles: state.humanResult.angles } : null,
       ai: state.aiResult ? { angles: state.aiResult.angles } : null,

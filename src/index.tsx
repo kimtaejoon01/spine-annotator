@@ -21,73 +21,6 @@ app.get('/', (c) => {
 
 
 // AI 추론 결과 전용 비교 페이지
-app.get('/ai-review', (c) => {
-  return c.render(
-    <div id="ai-review-root" class="ai-review-root">
-      <header class="app-header ai-review-header">
-        <div class="header-left">
-          <span class="app-title"><i class="fas fa-robot"></i> AI 결과 비교</span>
-          <span class="file-info"><span id="reviewFileName">이미지 폴더를 연결하세요</span></span>
-        </div>
-        <div class="header-right">
-          <button class="btn-secondary" id="reviewConnectImages"><i class="fas fa-folder-open"></i> 원본 이미지 폴더</button>
-          <button class="btn-secondary" id="reviewAddAiFolder"><i class="fas fa-layer-group"></i> AI 폴더 추가</button>
-          <button class="btn-secondary" id="reviewAddAiParent"><i class="fas fa-sitemap"></i> 상위 폴더 일괄 추가</button>
-          <button class="btn-secondary" id="reviewRefresh"><i class="fas fa-sync"></i> 새로고침</button>
-          <button class="btn-secondary" id="reviewClearAi"><i class="fas fa-times"></i> AI 폴더 초기화</button>
-          <a class="btn-secondary" href="/annotate"><i class="fas fa-edit"></i> 라벨링으로</a>
-        </div>
-      </header>
-
-      <div class="ai-review-layout">
-        <aside class="ai-review-sidebar">
-          <div class="panel">
-            <h3 class="panel-title"><i class="fas fa-images"></i> 원본 이미지 <span class="label-count" id="reviewImageCount">0</span></h3>
-            <div id="reviewImageStatus" class="folder-status"><span class="folder-status-empty"><i class="fas fa-info-circle"></i> 원본 폴더 없음</span></div>
-            <input id="reviewSearch" class="select-input file-search" placeholder="파일명 검색..." />
-            <ul id="reviewImageList" class="file-list"></ul>
-          </div>
-          <div class="panel">
-            <h3 class="panel-title"><i class="fas fa-layer-group"></i> AI 결과 폴더 <span class="label-count" id="reviewAiCount">0</span></h3>
-            <div id="reviewAiFolderList" class="ai-review-folder-list"><p class="empty-state">AI 결과 폴더를 여러 개 추가할 수 있습니다.</p></div>
-          </div>
-          <div class="panel">
-            <h3 class="panel-title"><i class="fas fa-sliders-h"></i> 보기 설정</h3>
-            <label class="control-label">AI 투명도 <span id="reviewOpacityValue">45</span>%</label>
-            <input id="reviewOpacity" type="range" min="0" max="100" value="45" />
-            <label class="control-label">카드 열 수</label>
-            <select id="reviewColumns" class="select-input">
-              <option value="2" selected>2열</option>
-              <option value="3">3열</option>
-              <option value="4">4열</option>
-            </select>
-            <p class="note-hint">휠 줌/드래그 팬은 라벨링 화면과 같은 방식으로 모든 비교 카드에 동시에 적용됩니다.</p>
-          </div>
-        </aside>
-
-        <main class="ai-review-main">
-          <div class="ai-review-toolbar">
-            <button class="btn-secondary" id="reviewPrev"><i class="fas fa-chevron-left"></i> 이전</button>
-            <button class="btn-secondary" id="reviewFit"><i class="fas fa-compress-arrows-alt"></i> 맞춤</button>
-            <span id="reviewZoomLabel" class="zoom-level">100%</span>
-            <button class="btn-secondary" id="reviewNext">다음 <i class="fas fa-chevron-right"></i></button>
-            <span id="reviewMatchSummary" class="ai-review-summary">-</span>
-          </div>
-          <div id="reviewStage" class="ai-review-stage">
-            <div id="reviewGrid" class="ai-review-grid cols-2">
-              <div class="ai-review-empty">
-                <i class="fas fa-folder-open fa-3x"></i>
-                <p>원본 이미지 폴더와 AI 결과 폴더를 연결하세요.</p>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-      <script type="module" src="/static/ai-review.js"></script>
-    </div>
-  )
-})
-
 // 검수 화면 — 테스트셋(AI 예측 마스크 있는 이미지)만 모아서 검수
 app.get('/review', (c) => {
   return c.render(
@@ -138,6 +71,7 @@ app.get('/review', (c) => {
           </div>
           <div class="panel">
             <h3 class="panel-title"><i class="fas fa-comment-dots"></i> 검수 메모</h3>
+            <div id="rvReviewTag" class="rv-review-tag">검수 대상: 사람 자동측정</div>
             <div class="rv-vsel-row">
               <select id="rvVsel" class="rv-vsel"><option value="">추체 선택…</option></select>
               <button class="btn-secondary" id="rvResetV">되돌리기</button>
