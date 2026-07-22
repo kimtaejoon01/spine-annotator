@@ -88,6 +88,75 @@ app.get('/ai-review', (c) => {
   )
 })
 
+// 검수 화면 — 테스트셋(AI 예측 마스크 있는 이미지)만 모아서 검수
+app.get('/review', (c) => {
+  return c.render(
+    <div id="rv-root" class="rv-root">
+      <header class="app-header">
+        <div class="header-left">
+          <span class="app-title"><i class="fas fa-user-check"></i> 검수</span>
+          <span class="file-info"><span id="rvFileName">폴더를 연결하세요</span></span>
+        </div>
+        <div class="header-right">
+          <button class="btn-secondary" id="rvConnectImages"><i class="fas fa-folder-open"></i> 원본 폴더</button>
+          <button class="btn-secondary" id="rvConnectMasks"><i class="fas fa-robot"></i> 예측 마스크 폴더</button>
+          <select id="rvMethod" class="rv-method">
+            <option value="v1">v1 4코너</option>
+            <option value="v2">v2 종판피팅</option>
+          </select>
+          <a class="btn-secondary" href="/annotate"><i class="fas fa-edit"></i> 라벨링으로</a>
+        </div>
+      </header>
+
+      <div class="rv-body">
+        <aside class="rv-side rv-side-left">
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-vials"></i> 테스트셋 <span id="rvCount" class="rv-count">0</span></h3>
+            <input type="text" id="rvSearch" class="rv-search" placeholder="파일명 검색…" />
+            <ul id="rvFileList" class="rv-file-list"></ul>
+          </div>
+        </aside>
+
+        <main class="rv-main">
+          <div class="rv-toolbar">
+            <label class="rv-chk"><input type="checkbox" id="rvShowHuman" checked /> 사람 폴리곤</label>
+            <label class="rv-chk"><input type="checkbox" id="rvShowMask" checked /> AI 마스크</label>
+            <label class="rv-chk"><input type="checkbox" id="rvShowHumanMeasure" checked /> 자동측정(사람)</label>
+            <label class="rv-chk"><input type="checkbox" id="rvShowAiMeasure" /> 자동측정(AI)</label>
+            <label class="rv-chk"><input type="checkbox" id="rvReview" /> 검수 모드(드래그)</label>
+            <span class="rv-sep"></span>
+            <button class="btn-secondary" id="rvPrev"><i class="fas fa-chevron-up"></i></button>
+            <button class="btn-secondary" id="rvNext"><i class="fas fa-chevron-down"></i></button>
+          </div>
+          <div id="rvStage" class="rv-stage"></div>
+        </main>
+
+        <aside class="rv-side rv-side-right">
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-ruler-combined"></i> 측정 비교</h3>
+            <div id="rvAngles" class="rv-angles">이미지를 선택하세요</div>
+          </div>
+          <div class="panel">
+            <h3 class="panel-title"><i class="fas fa-comment-dots"></i> 검수 메모</h3>
+            <div class="rv-vsel-row">
+              <select id="rvVsel" class="rv-vsel"><option value="">추체 선택…</option></select>
+              <button class="btn-secondary" id="rvResetV">되돌리기</button>
+            </div>
+            <textarea id="rvNoteV" rows="2" class="rv-note" placeholder="① 추체 선택 → ② 메모"></textarea>
+            <textarea id="rvNoteImg" rows="2" class="rv-note" placeholder="이미지 전체 메모"></textarea>
+            <div class="rv-save-row">
+              <button class="btn-primary" id="rvSave">검수 저장</button>
+              <button class="btn-secondary" id="rvExport">JSON</button>
+              <span id="rvSaved" class="rv-saved"></span>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <script type="module" src="/static/review-page.js"></script>
+    </div>
+  )
+})
+
 // 라벨링 화면 (Phase 1 프로토타입)
 app.get('/annotate', (c) => {
   return c.render(
