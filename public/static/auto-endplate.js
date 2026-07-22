@@ -192,7 +192,15 @@ function fmt(v) { return (v == null || Number.isNaN(v)) ? '' : (Math.round(v * 1
 // ================================================================
 // v2 (그룹 피팅) + 검증 알고리즘  — Python 코드 A/B 포팅
 // ================================================================
-export const VALIDATION = { MAX_NEIGHBOR_JUMP: 35.0, MIN_PERP_TO_SPINE: 40.0, MAX_WEDGE: 40.0, FRAC: 0.30 }
+// 정상이면 종판은 척추 진행축과 거의 수직(≈90°). 90°에서 얼마나 벗어났는지로 판정.
+export const VALIDATION = {
+  MAX_NEIGHBOR_JUMP: 35.0,
+  PERP_SEVERE: 45.0,   // 이보다 작으면(=45° 이상 어긋남) 심각
+  PERP_BAD: 60.0,      // 이보다 작으면 의심(30° 이상 어긋남)
+  PERP_WARN: 70.0,     // 이보다 작으면 경미
+  MAX_WEDGE: 40.0,
+  FRAC: 0.30,
+}
 
 // 점들의 주방향(최대 분산 방향) — PCA (2x2 공분산 고유벡터)
 function fitLineDir(pts) {
@@ -240,9 +248,11 @@ export function tiltH(v) {
 }
 
 // ---- v1: 4코너 극점 ----
-export function endplateA(points, isC2, useYAxis) {
+export function endplateA(points, isC2, useYAxis, axesOverride) {
   let ap, si
-  if (useYAxis) { ap = [1, 0]; si = [0, 1] } else { ({ ap, si } = rectAxes(points, isC2)) }
+  if (axesOverride) { ap = axesOverride.ap; si = axesOverride.si }
+  else if (useYAxis) { ap = [1, 0]; si = [0, 1] }
+  else { ({ ap, si } = rectAxes(points, isC2)) }
   const center = mean(points)
   const aArr = [], sArr = []
   for (const p of points) { const r = sub(p, center); aArr.push(dot(r, ap)); sArr.push(dot(r, si)) }
@@ -261,10 +271,12 @@ export function endplateA(points, isC2, useYAxis) {
 }
 
 // ---- v2: 종판 그룹 피팅 ----
-export function endplateB(points, isC2, useYAxis, frac) {
+export function endplateB(points, isC2, useYAxis, frac, axesOverride) {
   frac = frac || VALIDATION.FRAC
   let si
-  if (useYAxis) { si = [0, 1] } else { ({ si } = rectAxes(points, isC2)) }
+  if (axesOverride) { si = axesOverride.si }
+  else if (useYAxis) { si = [0, 1] }
+  else { ({ si } = rectAxes(points, isC2)) }
   const center = mean(points)
   const sArr = points.map(p => dot(sub(p, center), si))
   const sMin = Math.min(...sArr), sMax = Math.max(...sArr), span = sMax - sMin
@@ -289,38 +301,82 @@ export function endplateB(points, isC2, useYAxis, frac) {
 // ---- 검증 + y축 폴백 ----
 // signals >= 2 → y축 폴백 재계산(quality 'fallback'), ==1 → 'review', 0 → 'ok'
 export function validateAndFix(method, vertsPts, isC2Map, opts = {}) {
-  const fit = (pts, isC2, useY) => method === 'v2'
-    ? endplateB(pts, isC2, useY, opts.frac)
-    : endplateA(pts, isC2, useY)
+  const fit = (pts, isC2, useY, forcedAp) => method === 'v2'
+    ? endplateB(pts, isC2, useY, opts.frac, forcedAp)
+    : endplateA(pts, isC2, useY, forcedAp)
   const present = ORDER.filter(n => vertsPts[n])
-  const raw = {}
-  const centers = {}
+  const raw = {}, centers = {}
   for (const n of present) { raw[n] = fit(vertsPts[n], !!isC2Map[n], false); centers[n] = mean(vertsPts[n]) }
+
+  // 국소 척추 진행축 (이웃 중심 연결). 없으면 위/아래 하나만으로도 추정.
+  const spineDirAt = (i) => {
+    const prev = i > 0 ? centers[present[i - 1]] : null
+    const next = i < present.length - 1 ? centers[present[i + 1]] : null
+    if (prev && next) return sub(next, prev)
+    if (next) return sub(next, centers[present[i]])
+    if (prev) return sub(centers[present[i]], prev)
+    return null
+  }
+
   const out = {}
   for (let i = 0; i < present.length; i++) {
     const n = present[i]
     let r = raw[n]
-    let signals = 0
+    let score = 0
     const reasons = []
-    // 1) 이웃 종판각 급변
+
+    // (강) 척추 진행축과의 수직성 — 혼자서도 축 오인을 의미
+    const sd = spineDirAt(i)
+    let perp = null
+    if (sd) {
+      perp = angleBetweenLines(r.infVec, sd)     // 90에 가까워야 정상
+      const perpSup = angleBetweenLines(r.supVec, sd)
+      const worst = Math.min(perp, perpSup)
+      if (worst < VALIDATION.PERP_SEVERE) { score += 3; reasons.push(`종판이 척추축과 ${worst.toFixed(0)}° (수직에서 크게 벗어남)`) }
+      else if (worst < VALIDATION.PERP_BAD) { score += 2; reasons.push(`종판 방향 의심 (${worst.toFixed(0)}°)`) }
+      else if (worst < VALIDATION.PERP_WARN) { score += 1; reasons.push(`종판 방향 경미 이탈 (${worst.toFixed(0)}°)`) }
+    }
+    // (중) 이웃 종판각 급변
     const nb = []
     for (const j of [i - 1, i + 1]) if (j >= 0 && j < present.length) nb.push(tiltH(raw[present[j]].infVec))
     if (nb.length) {
       const med = median(nb)
-      if (Math.abs(tiltH(r.infVec) - med) > VALIDATION.MAX_NEIGHBOR_JUMP) { signals++; reasons.push('이웃과 각도 급변') }
+      if (Math.abs(tiltH(r.infVec) - med) > VALIDATION.MAX_NEIGHBOR_JUMP) { score += 1; reasons.push('이웃과 각도 급변') }
     }
-    // 2) 척추 진행축과의 수직성 (C2 양옆으로 잡히는 케이스 검출)
-    if (i > 0 && i < present.length - 1) {
-      const spineDir = sub(centers[present[i + 1]], centers[present[i - 1]])
-      if (angleBetweenLines(r.infVec, spineDir) < VALIDATION.MIN_PERP_TO_SPINE) { signals++; reasons.push('척추축과 나란함') }
-    }
-    // 3) 추체 내 상·하 종판 모순
-    if (Math.abs(tiltH(r.supVec) - tiltH(r.infVec)) > VALIDATION.MAX_WEDGE) { signals++; reasons.push('상·하 종판 모순') }
+    // (중) 추체 내 상·하 종판 모순
+    if (Math.abs(tiltH(r.supVec) - tiltH(r.infVec)) > VALIDATION.MAX_WEDGE) { score += 1; reasons.push('상·하 종판 모순') }
 
     let quality = 'ok'
-    if (signals >= 2) { r = fit(vertsPts[n], !!isC2Map[n], true); quality = 'fallback' }
-    else if (signals === 1) quality = 'review'
-    out[n] = { ...r, quality, reasons }
+    if (score >= 2) {
+      // 1순위: 척추 진행축에 '수직'인 축으로 재계산 (해부학적으로 타당)
+      let fixed = null
+      if (sd) {
+        // 척추축에 수직인 방향 = 종판이 놓여야 할 방향(전후축)
+        let ap = orientAnterior(unit([-sd[1], sd[0]]))
+        let si = [-ap[1], ap[0]]; if (si[1] < 0) si = [-si[0], -si[1]]
+        fixed = fit(vertsPts[n], !!isC2Map[n], false, { ap, si })
+      }
+      // 2순위: y축(수직) 폴백
+      if (!fixed) fixed = fit(vertsPts[n], !!isC2Map[n], true)
+      // 재검증: 고친 게 더 나은지 확인
+      if (sd) {
+        const perpOf = (x) => Math.min(angleBetweenLines(x.infVec, sd), angleBetweenLines(x.supVec, sd))
+        const before = perpOf(r)
+        let best = fixed, bestVal = perpOf(fixed)
+        // v1(4코너)이 이런 모양에서 못 고치는 경우가 있어, 최후 수단으로
+        // v2(종판 그룹 피팅)를 보정된 축으로 시도해 본다.
+        let ap2 = orientAnterior(unit([-sd[1], sd[0]]))
+        let si2 = [-ap2[1], ap2[0]]; if (si2[1] < 0) si2 = [-si2[0], -si2[1]]
+        const altB = endplateB(vertsPts[n], !!isC2Map[n], false, opts.frac, { ap: ap2, si: si2 })
+        const altVal = perpOf(altB)
+        if (altVal > bestVal) { best = altB; bestVal = altVal }
+        if (bestVal > before) { r = best; quality = 'fallback' }
+        else { quality = 'review' }             // 어떤 보정도 나아지지 않으면 사람이 확인
+      } else { r = fixed; quality = 'fallback' }
+    } else if (score === 1) {
+      quality = 'review'
+    }
+    out[n] = { ...r, quality, reasons, score }
   }
   return out
 }
