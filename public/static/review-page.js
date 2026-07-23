@@ -5,7 +5,7 @@
    - 검수 모드에서 종판 코너 드래그 교정 + 추체별/이미지 메모 저장
    ================================================================ */
 import { SpineAnnotator } from './annotator.js'
-import { pickFolder, listImageFiles, fileHandleToUrl } from './fs.js'
+import { pickFolderAs, restoreFolderAs, ensurePermission, listImageFiles, fileHandleToUrl } from './fs.js'
 import { computeSagittal, DEFAULT_RANGES } from './auto-endplate.js'
 import { maskToPolygons, maskToColorCanvas } from './ai-measure.js'
 
@@ -64,8 +64,13 @@ function init() {
   $('rvSave').addEventListener('click', saveReview)
   $('rvExport').addEventListener('click', exportJson)
 
+  // 스페이스 = 화면 이동(팬)
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') { state.annotator.setPanMode?.(false) }
+  })
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return
+    if (e.code === 'Space') { e.preventDefault(); state.annotator.setPanMode?.(true); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo() }
     if (e.key === 'ArrowDown') { e.preventDefault(); step(1) }
     if (e.key === 'ArrowUp') { e.preventDefault(); step(-1) }
@@ -73,21 +78,48 @@ function init() {
 }
 
 // ---------------- 폴더 연결 ----------------
+const KEY_IMG = 'rv:imagesFolder'
+const KEY_MASK = 'rv:masksFolder'
+
 async function connect(kind) {
   try {
-    const handle = await pickFolder()
+    const handle = await pickFolderAs(kind === 'images' ? KEY_IMG : KEY_MASK)
     if (!handle) return
-    const files = await listImageFiles(handle)
-    if (kind === 'images') {
-      state.images = new Map()
-      for (const f of files) state.images.set(baseOf(f.name), f)
-    } else {
-      state.masks = new Map()
-      for (const f of files) state.masks.set(predBase(f.name), f.handle || f)
-    }
-    buildTestSet()
+    await indexFolder(kind, handle)
   } catch (e) {
     alert('폴더 연결 실패: ' + (e && e.message || e))
+  }
+}
+
+async function indexFolder(kind, handle) {
+  const files = await listImageFiles(handle)
+  if (kind === 'images') {
+    state.images = new Map()
+    for (const f of files) state.images.set(baseOf(f.name), f)
+  } else {
+    state.masks = new Map()
+    for (const f of files) state.masks.set(predBase(f.name), f.handle || f)
+  }
+  buildTestSet()
+}
+
+// 저장해둔 폴더 자동 복원 (권한이 남아있으면 바로, 아니면 버튼에 안내)
+async function restoreFolders() {
+  for (const [kind, key, btnId] of [['images', KEY_IMG, 'rvConnectImages'], ['masks', KEY_MASK, 'rvConnectMasks']]) {
+    const r = await restoreFolderAs(key)
+    if (!r) continue
+    if (r.needsPermission) {
+      const btn = $(btnId)
+      btn.classList.add('rv-needs-perm')
+      btn.title = '이전 폴더가 기억되어 있습니다. 클릭해 권한을 허용하세요.'
+      btn.onclick = async () => {
+        const ok = await ensurePermission(r.handle)
+        if (ok) { btn.classList.remove('rv-needs-perm'); await indexFolder(kind, r.handle) }
+        else connect(kind)
+      }
+    } else {
+      await indexFolder(kind, r)
+    }
   }
 }
 
@@ -353,4 +385,4 @@ function exportJson() {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-document.addEventListener('DOMContentLoaded', init)
+document.addEventListener('DOMContentLoaded', () => { init(); restoreFolders() })
