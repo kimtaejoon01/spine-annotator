@@ -77,3 +77,47 @@ test('exportToCOCO: 제거된 FH_L/FH_R 은 category_id 0 을 만들지 않고 �
   assert.equal(coco.annotations[0].category_id, 1)
   assert.ok(coco.annotations.every(a => a.category_id > 0))
 })
+
+// ---- S1 상종판(endplate) ----
+test('exportToCOCO: S1 상종판은 keypoints 로 나가고 segmentation 이 아니다', () => {
+  const coco = exportToCOCO({
+    filename: 'a.png', width: 100, height: 200,
+    polygons: [
+      { id: 1, label: 'L5', points: square(0, 0, 5) },
+      { id: 2, label: 'S1_SUP', points: [10, 50, 40, 55], shape: 'endplate' },
+    ],
+  })
+  // 종판 카테고리(id 30) 가 추가됨
+  const epCat = coco.categories.find(c => c.name === 'S1_endplate')
+  assert.ok(epCat, 'S1_endplate 카테고리 존재')
+  assert.equal(epCat.id, 30)
+  assert.deepEqual(epCat.keypoints, ['SUP_ANT', 'SUP_POST'])
+
+  // 종판 annotation 은 keypoints 를 갖고 segmentation 은 비어있다
+  const ep = coco.annotations.find(a => a.category_id === 30)
+  assert.ok(ep, '종판 annotation 존재')
+  assert.deepEqual(ep.keypoints, [10, 50, 2, 40, 55, 2])
+  assert.equal(ep.num_keypoints, 2)
+  assert.deepEqual(ep.segmentation, [])
+  assert.equal(ep.area, 0)
+
+  // L5 는 정상 segmentation 유지
+  const l5 = coco.annotations.find(a => a.category_id === 24)
+  assert.ok(l5 && Array.isArray(l5.segmentation) && l5.segmentation[0].length === 8)
+})
+
+test('exportToCOCO: 종판이 없으면 S1_endplate 카테고리는 추가되지 않는다', () => {
+  const coco = exportToCOCO({
+    filename: 'a.png', width: 10, height: 10,
+    polygons: [{ id: 1, label: 'C1', points: square(0, 0, 5) }],
+  })
+  assert.ok(!coco.categories.some(c => c.name === 'S1_endplate'))
+})
+
+test('exportToCOCO: 종판 좌표가 깨지면(2점 아님) 제외', () => {
+  const coco = exportToCOCO({
+    filename: 'a.png', width: 10, height: 10,
+    polygons: [{ id: 1, label: 'S1_SUP', points: [1, 2, 3], shape: 'endplate' }],
+  })
+  assert.ok(!coco.annotations.some(a => a.category_id === 30))
+})

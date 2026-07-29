@@ -807,6 +807,23 @@ export class SpineAnnotator {
         return
       }
 
+      // endplate(종판 선) 모드: 1번째 클릭 = 앞 코너, 2번째 클릭 = 뒤 코너 → 2점 선
+      if (this.pendingLabel && this.pendingLabelMode === 'endplate' && !this.drawing) {
+        const escale = this.stage.scaleX() || 1
+        const ecolor = getRegionColor(this.pendingLabel)
+        if (!this._endplateFirst) {
+          this._endplateFirst = { x: pos.x, y: pos.y }
+          this._endplateFirstDot = new Konva.Circle({ x: pos.x, y: pos.y, radius: 4 / escale, fill: ecolor, listening: false })
+          this._endplatePreview = new Konva.Line({ points: [pos.x, pos.y, pos.x, pos.y], stroke: ecolor, strokeWidth: 2 / escale, dash: [6 / escale, 4 / escale], listening: false })
+          this.previewLayer.add(this._endplateFirstDot)
+          this.previewLayer.add(this._endplatePreview)
+          this.previewLayer.batchDraw()
+          return
+        }
+        this._commitEndplate(this._endplateFirst.x, this._endplateFirst.y, pos.x, pos.y)
+        return
+      }
+
       this.addPoint(pos.x, pos.y)
     } else if (this.tool === 'edit') {
       // 좌클릭만 처리 (우클릭은 점 삭제용 contextmenu)
@@ -867,8 +884,41 @@ export class SpineAnnotator {
     if (this.previewLayer) this.previewLayer.batchDraw()
   }
 
+  // 종판 선(2점) 커밋: 앞 코너 → 뒤 코너
+  _commitEndplate(x1, y1, x2, y2) {
+    const dist = Math.hypot(x2 - x1, y2 - y1)
+    if (!(dist > 0)) { this._clearEndplatePreview(); return }
+    const committedLabel = this.pendingLabel || null
+    const maxId = (this.polygons || []).reduce((m, p) => Math.max(m, Number(p.id) || 0), 0)
+    this.polygons.push({
+      id: Math.max(polyIdCounter++, maxId + 1),
+      label: committedLabel,
+      points: [x1, y1, x2, y2],
+      manualLabel: true,
+      landmark: false,
+      shape: 'endplate',
+    })
+    this._clearEndplatePreview()
+    // S1 종판은 이미지당 하나라 스티키 없이 바로 해제
+    this.pendingLabel = null
+    this.pendingLabelMode = 'polygon'
+    this.renderPolygons()
+    this.pushHistory()
+    this.notifyPolygons()
+    this.updateStatus?.()
+    try { window.dispatchEvent(new CustomEvent('spine:endplate-committed', { detail: { label: committedLabel } })) } catch (e) {}
+  }
+
+  _clearEndplatePreview() {
+    if (this._endplateFirstDot) { this._endplateFirstDot.destroy(); this._endplateFirstDot = null }
+    if (this._endplatePreview) { this._endplatePreview.destroy(); this._endplatePreview = null }
+    this._endplateFirst = null
+    if (this.previewLayer) this.previewLayer.batchDraw()
+  }
+
   cancelOrDeleteLastCircle() {
     if (this._circleFirst) { this._clearCirclePreview(); return true }
+    if (this._endplateFirst) { this._clearEndplatePreview(); return true }
     return false
   }
 
@@ -881,6 +931,14 @@ export class SpineAnnotator {
       const cr = Math.hypot(this._circleFirst.x - pos.x, this._circleFirst.y - pos.y)
       this._circlePreview.position({ x: pos.x, y: pos.y })
       this._circlePreview.radius(cr)
+      this.previewLayer.batchDraw()
+      return
+    }
+
+    // endplate 모드: 첫 코너 → 커서까지 선 미리보기
+    if (this._endplateFirst && this._endplatePreview) {
+      if (!pos) return
+      this._endplatePreview.points([this._endplateFirst.x, this._endplateFirst.y, pos.x, pos.y])
       this.previewLayer.batchDraw()
       return
     }
@@ -1033,6 +1091,7 @@ export class SpineAnnotator {
   // ============================================================
   setPendingLabel(label, mode = '') {
     this._clearCirclePreview?.()
+    this._clearEndplatePreview?.()
     this.pendingLabel = label || null
     this.pendingLabelMode = mode || (isPelvisPointLabel(label) ? 'point' : 'polygon')
     this.updateStatus()
@@ -1398,18 +1457,21 @@ export class SpineAnnotator {
 
       const group = new Konva.Group({ polyId: poly.id })
 
-      // 폴리곤 채움
+      // 종판(endplate)은 2점 '열린 선'으로, 나머지는 닫힌 폴리곤(채움)으로 그림
+      const isEndplate = poly.shape === 'endplate'
       const shape = new Konva.Line({
         points: poly.points,
-        fill: color + '33', // 20% 투명
+        fill: isEndplate ? undefined : color + '33', // 종판은 채움 없음
         stroke: color,
         strokeWidth: (isSelected ? 3 : 2) / this.stage.scaleX(),
-        closed: true,
+        closed: !isEndplate,
+        lineCap: 'round',
         polyId: poly.id,
       })
       // VISIBILITY_MODULE_FINAL_OUTLINE: line/name toggle hides outline only.
       // Mask fill stays visible until humanLabelVisible hides the full polyLayer.
-      if (this.labelOverlayVisible === false) {
+      // (종판 선은 외곽선이 곧 데이터라, line/name 토글로 숨기지 않습니다.)
+      if (this.labelOverlayVisible === false && !isEndplate) {
         shape.strokeEnabled(false)
         shape.strokeWidth(0)
       } else {
@@ -1772,6 +1834,9 @@ export class SpineAnnotator {
       points: p.points.slice(),
       manualLabel: p.manualLabel === true,
       landmark: p.landmark === true,
+      // shape('circle'/'endplate' 등)를 저장에 포함. 특히 endplate(2점 선)는
+      // 이 필드가 없으면 서버에서 '점 6개 미만'으로 걸러져 사라집니다.
+      ...(p.shape ? { shape: p.shape } : {}),
       selected: p.id === this.selectedId,
     }))
   }

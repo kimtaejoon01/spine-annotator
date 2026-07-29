@@ -24,29 +24,51 @@ export function exportToCOCO({ filename, width, height, polygons, landmarks = []
       name: lbl,
       supercategory: getSupercategory(lbl),
     }))
+  // S1 상종판(2점 선)이 있으면 keypoint 카테고리(id 30) 추가 — 서버 export 와 동일
+  const hasEndplate = polygons.some(p => p.shape === 'endplate')
+  if (hasEndplate) {
+    categories.push({ id: ALL_LABELS.length + 1, name: 'S1_endplate', supercategory: 'endplate', keypoints: ['SUP_ANT', 'SUP_POST'], skeleton: [[1, 2]] })
+  }
 
   // annotations
-  const annotations = polygons
-    .filter(p => {
-      if (!p.label || !Array.isArray(p.points) || p.points.length < 6) return false
-      // ALL_LABELS 에 없는 라벨(예: 제거된 FH_L/FH_R)은 category_id 가 0 이 되므로 제외
-      return ALL_LABELS.indexOf(p.label) !== -1
-    })
-    .map((poly, idx) => {
-      const pts = poly.points
+  const round2 = v => Math.round(v * 100) / 100
+  let annId = 0
+  const annotations = []
+  for (const poly of polygons) {
+    const pts = Array.isArray(poly.points) ? poly.points : []
+
+    // S1 상종판(2점 선) → keypoints
+    if (poly.shape === 'endplate') {
+      if (pts.length !== 4 || pts.some(v => !Number.isFinite(Number(v)))) continue
       const bbox = computeBBox(pts)
-      const area = computePolygonArea(pts)
-      const categoryId = ALL_LABELS.indexOf(poly.label) + 1
-      return {
-        id: idx + 1,
+      annotations.push({
+        id: ++annId,
         image_id: 1,
-        category_id: categoryId,
-        segmentation: [pts.map(v => Math.round(v * 100) / 100)],
-        bbox: bbox.map(v => Math.round(v * 100) / 100),
-        area: Math.round(area * 100) / 100,
+        category_id: ALL_LABELS.length + 1, // S1_endplate = 30
+        keypoints: [round2(pts[0]), round2(pts[1]), 2, round2(pts[2]), round2(pts[3]), 2],
+        num_keypoints: 2,
+        segmentation: [],
+        bbox: bbox.map(round2),
+        area: 0,
         iscrowd: 0,
-      }
+      })
+      continue
+    }
+
+    if (!poly.label || pts.length < 6) continue
+    if (ALL_LABELS.indexOf(poly.label) === -1) continue // 미지 라벨(FH_L/FH_R 등) 제외
+    const bbox = computeBBox(pts)
+    const area = computePolygonArea(pts)
+    annotations.push({
+      id: ++annId,
+      image_id: 1,
+      category_id: ALL_LABELS.indexOf(poly.label) + 1,
+      segmentation: [pts.map(round2)],
+      bbox: bbox.map(round2),
+      area: round2(area),
+      iscrowd: 0,
     })
+  }
 
   const coco = {
     info: {

@@ -32,7 +32,13 @@ function sanitizePolygons(raw: any): { polygons?: any[]; error?: string } {
     const pts = poly.points
     if (!Array.isArray(pts)) return { error: `polygon[${i}].points must be an array` }
     if (pts.length % 2 !== 0) return { error: `polygon[${i}].points length must be even` }
-    if (pts.length < 6) return { error: `polygon[${i}] needs at least 3 points` }
+    // 종판 선(endplate)은 2점(길이 4)만 있으면 유효. 나머지는 최소 3점(길이 6).
+    const isEndplate = poly.shape === 'endplate'
+    if (isEndplate) {
+      if (pts.length !== 4) return { error: `polygon[${i}] endplate needs exactly 2 points` }
+    } else if (pts.length < 6) {
+      return { error: `polygon[${i}] needs at least 3 points` }
+    }
     if (pts.length > MAX_POINTS_PER_POLY * 2) return { error: `polygon[${i}] has too many points (max ${MAX_POINTS_PER_POLY})` }
     const cleanPts: number[] = []
     for (const v of pts) {
@@ -389,6 +395,25 @@ api.get('/export', async (c) => {
       if (!width || !height) warnings.images_missing_size.push(row.filename)
       images.push({ id: imgId, file_name: row.filename, width, height })
       for (const poly of polygons) {
+        const rawPts = Array.isArray(poly.points) ? poly.points : []
+        const pts = rawPts.map(Number)
+
+        // S1 상종판(2점 선) → COCO keypoints 로 내보냄 (segmentation 아님)
+        if (poly.shape === 'endplate') {
+          if (pts.length !== 4 || pts.some((n: number) => !Number.isFinite(n))) {
+            warnings.invalid_polygons++
+            continue
+          }
+          const bbox = polygonBbox(pts)
+          annotations.push({
+            id: annId++, image_id: imgId, category_id: S1_ENDPLATE_CATEGORY.id,
+            keypoints: [pts[0], pts[1], 2, pts[2], pts[3], 2], // v=2: 보이는 점
+            num_keypoints: 2,
+            segmentation: [], bbox, area: 0, iscrowd: 0,
+          })
+          continue
+        }
+
         const label = poly.label || ''
         const cat = catByName.get(label)
         if (!cat) {
@@ -396,8 +421,6 @@ api.get('/export', async (c) => {
           continue
         }
         // 과거 데이터 방어: 좌표가 짝수 개의 유한한 숫자가 아니면 스킵 (NaN annotation 방지)
-        const rawPts = Array.isArray(poly.points) ? poly.points : []
-        const pts = rawPts.map(Number)
         if (pts.length < 6 || pts.length % 2 !== 0 || pts.some((n: number) => !Number.isFinite(n))) {
           warnings.invalid_polygons++
           continue
@@ -444,8 +467,19 @@ function cocoSupercategory(label: string) {
   if (label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT') return 'hip_center'
   return 'vertebra'
 }
+// S1 상종판은 분할 마스크가 아니라 2점 keypoint 로 내보냅니다.
+// COCO keypoints 규격: keypoints=[SUP_ANT, SUP_POST], skeleton=[[1,2]].
+const S1_ENDPLATE_CATEGORY = {
+  id: COCO_ALL_LABELS.length + 1,   // = 30
+  name: 'S1_endplate',
+  supercategory: 'endplate',
+  keypoints: ['SUP_ANT', 'SUP_POST'],
+  skeleton: [[1, 2]],
+}
 function generateCocoCategories() {
-  return COCO_ALL_LABELS.map((name, i) => ({ id: i + 1, name, supercategory: cocoSupercategory(name) }))
+  const cats: any[] = COCO_ALL_LABELS.map((name, i) => ({ id: i + 1, name, supercategory: cocoSupercategory(name) }))
+  cats.push(S1_ENDPLATE_CATEGORY)   // keypoint 카테고리
+  return cats
 }
 
 function polygonBbox(pts: number[]) {

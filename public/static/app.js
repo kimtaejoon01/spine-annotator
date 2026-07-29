@@ -1527,6 +1527,8 @@ function installPelvisRuntimeFinalFixes() {
   if (!('pendingLabelMode' in a)) a.pendingLabelMode = 'polygon'
 
   a.setPendingLabel = function(label, mode = '') {
+    this._clearCirclePreview?.()
+    this._clearEndplatePreview?.()
     this.pendingLabel = label || null
     this.pendingLabelMode = mode || (PELVIS_POINT_LABELS_FINAL.includes(label) ? 'point' : 'polygon')
     if (typeof this.updateStatus === 'function') this.updateStatus()
@@ -3300,8 +3302,9 @@ function initPelvisLabelControls() {
       <button type="button" class="pelvis-label-btn" data-label="HC_R" data-mode="point">HC_R 점</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="circle">FH_LAT</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="HC_LAT" data-mode="point">HC_LAT 점</button>
+      <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="S1_SUP" data-mode="endplate">S1 상종판</button>
     </div>
-    <p class="pelvis-label-help">AP는 HC_L/HC_R 점을, LAT는 FH_LAT(원)/HC_LAT(점)를 씁니다. FH_LAT는 가장자리→중심 순 두 번 클릭으로 원을 그리며, 한 번 선택하면 계속 연속으로 그릴 수 있고 버튼을 다시 누르면 해제됩니다.</p>
+    <p class="pelvis-label-help">LAT: FH_LAT(원, 가장자리→중심 2클릭), HC_LAT(점), S1 상종판(선, 앞 코너→뒤 코너 2클릭). S1은 폴리곤 없이 상종판 선만 찍습니다. FH_LAT는 연속으로 그릴 수 있고, 다시 누르면 해제됩니다.</p>
   `
 
   const labelPanel = document.getElementById('labelList')?.closest('.panel')
@@ -3339,6 +3342,8 @@ function initPelvisLabelControls() {
         clearPelvisLabelActiveButtonsFinal()
       }
     })
+    // S1 상종판(선) 완성 → 버튼 해제 (한 이미지당 하나라 스티키 없음)
+    window.addEventListener('spine:endplate-committed', () => clearPelvisLabelActiveButtonsFinal())
   }
 }
 
