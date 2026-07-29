@@ -27,7 +27,11 @@ export function exportToCOCO({ filename, width, height, polygons, landmarks = []
 
   // annotations
   const annotations = polygons
-    .filter(p => p.label && p.points.length >= 6) // 최소 3개 점
+    .filter(p => {
+      if (!p.label || !Array.isArray(p.points) || p.points.length < 6) return false
+      // ALL_LABELS 에 없는 라벨(예: 제거된 FH_L/FH_R)은 category_id 가 0 이 되므로 제외
+      return ALL_LABELS.indexOf(p.label) !== -1
+    })
     .map((poly, idx) => {
       const pts = poly.points
       const bbox = computeBBox(pts)

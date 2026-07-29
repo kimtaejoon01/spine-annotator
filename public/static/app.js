@@ -1452,8 +1452,16 @@ function initRightSidebarCompactUI() {
 // ================================================================
 // Final pelvis label runtime guard
 // ================================================================
-const PELVIS_EXTRA_LABELS_FINAL = ['FH_L', 'FH_R', 'HC_L', 'HC_R', 'FH_LAT', 'HC_LAT']
+const PELVIS_EXTRA_LABELS_FINAL = ['HC_L', 'HC_R', 'FH_LAT', 'HC_LAT']
 const PELVIS_POINT_LABELS_FINAL = ['HC_L', 'HC_R', 'HC_LAT']
+// 한 번 그려도 모드가 풀리지 않고 유지되는(스티키) 라벨.
+// FH_LAT 은 한 이미지에 여러 개를 그리는 경우가 많아 매번 다시 누르지 않게 합니다.
+const PELVIS_STICKY_LABELS_FINAL = new Set(['FH_LAT'])
+function reactivatePelvisLabelButtonFinal(label) {
+  document.querySelectorAll('.pelvis-label-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.label === label)
+  })
+}
 
 function isFinalPelvisLabel(label) {
   return PELVIS_EXTRA_LABELS_FINAL.includes(label)
@@ -3288,14 +3296,12 @@ function initPelvisLabelControls() {
   panel.innerHTML = `
     <h3 class="panel-title"><i class="fas fa-location-dot"></i> 골반 라벨</h3>
     <div class="pelvis-label-grid">
-      <button type="button" class="pelvis-label-btn" data-label="FH_L" data-mode="circle">FH_L</button>
-      <button type="button" class="pelvis-label-btn" data-label="FH_R" data-mode="circle">FH_R</button>
       <button type="button" class="pelvis-label-btn" data-label="HC_L" data-mode="point">HC_L 점</button>
       <button type="button" class="pelvis-label-btn" data-label="HC_R" data-mode="point">HC_R 점</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="FH_LAT" data-mode="circle">FH_LAT</button>
       <button type="button" class="pelvis-label-btn pelvis-label-btn-lat" data-label="HC_LAT" data-mode="point">HC_LAT 점</button>
     </div>
-    <p class="pelvis-label-help">AP는 L/R 버튼을 쓰고, LAT는 FH_LAT/HC_LAT를 씁니다. FH는 가장자리 점 → 중심 순으로 두 번 클릭(반경=두 점 거리), HC는 점 클릭입니다.</p>
+    <p class="pelvis-label-help">AP는 HC_L/HC_R 점을, LAT는 FH_LAT(원)/HC_LAT(점)를 씁니다. FH_LAT는 가장자리→중심 순 두 번 클릭으로 원을 그리며, 한 번 선택하면 계속 연속으로 그릴 수 있고 버튼을 다시 누르면 해제됩니다.</p>
   `
 
   const labelPanel = document.getElementById('labelList')?.closest('.panel')
@@ -3323,7 +3329,16 @@ function initPelvisLabelControls() {
   // 원(FH) 완성 시 → 버튼 활성 해제 (annotator가 이벤트 발생)
   if (!window.__spineCircleCommitBound) {
     window.__spineCircleCommitBound = true
-    window.addEventListener('spine:circle-committed', () => clearPelvisLabelActiveButtonsFinal())
+    window.addEventListener('spine:circle-committed', (e) => {
+      const label = e && e.detail && e.detail.label
+      if (label && PELVIS_STICKY_LABELS_FINAL.has(label)) {
+        // 스티키(FH_LAT): 원을 하나 완성해도 같은 라벨/모드로 다시 무장하고 버튼 유지
+        state.annotator.setPendingLabel(label, 'circle')
+        reactivatePelvisLabelButtonFinal(label)
+      } else {
+        clearPelvisLabelActiveButtonsFinal()
+      }
+    })
   }
 }
 

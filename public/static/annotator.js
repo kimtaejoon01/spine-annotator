@@ -3,6 +3,7 @@
    ================================================================ */
 
 import { LABELS, getRegionColor, generateLabels, isSpineLabel, isExtraLabel, isPelvisPointLabel } from './labels.js'
+import { assignUniqueIds } from './polyid.js'
 
 const MIN_POINTS = 3
 const POINT_RADIUS = 5
@@ -780,11 +781,10 @@ export class SpineAnnotator {
       // 클릭이 점/선/이미지 어디에서 발생했든 점 추가
       if (e.evt.button !== 0) return // 좌클릭만
 
-      // 이미 만든 폴리곤의 점/선을 클릭하면 무시 (편집은 edit 모드에서)
-      if (e.target.getAttr('polyId') && !this.drawing) {
-        // 그릴 때는 본인 점 클릭으로 닫기 가능 (시작점)
-        return
-      }
+      // (이전에는 기존 폴리곤의 점/선 위 클릭 시 새 점 추가를 막았습니다.
+      //  척추체/골반이 겹치는 부위에서는 라벨된 구역 위에 새 폴리곤·원·점을
+      //  시작해야 하는 경우가 있어 겹쳐 찍기를 허용합니다.
+      //  그리는 중(this.drawing)일 때는 기존과 동일하게 점이 추가됩니다.)
       // 자유곡선 모드에서는 클릭이 아니라 마우스 이동으로 점을 추가합니다.
       // 마우스를 누르고 있을 필요가 없도록 여기서는 일반 클릭 점 추가를 막습니다.
       if (this.freehandMode) return
@@ -839,23 +839,25 @@ export class SpineAnnotator {
 
   _commitCircle(cx, cy, r) {
     if (!(r > 0)) { this._clearCirclePreview(); return }
+    const committedLabel = this.pendingLabel || null   // 이벤트에서 스티키 판정용
     const N = 32, pts = []
     for (let i = 0; i < N; i++) {
       const a = (2 * Math.PI * i) / N
       pts.push(cx + r * Math.cos(a), cy + r * Math.sin(a))
     }
     this.polygons.push({
-      id: polyIdCounter++, label: this.pendingLabel || null, points: pts,
-      manualLabel: !!this.pendingLabel, landmark: false, shape: 'circle',
+      id: polyIdCounter++, label: committedLabel, points: pts,
+      manualLabel: !!committedLabel, landmark: false, shape: 'circle',
     })
     this._clearCirclePreview()
+    // 기본은 모드 해제. 스티키 라벨이면 circle-committed 핸들러가 다시 무장합니다.
     this.pendingLabel = null
     this.pendingLabelMode = 'polygon'
     this.renderPolygons()
     this.pushHistory()
     this.notifyPolygons()
     this.updateStatus?.()
-    try { window.dispatchEvent(new CustomEvent('spine:circle-committed')) } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('spine:circle-committed', { detail: { label: committedLabel } })) } catch (e) {}
   }
 
   _clearCirclePreview() {
@@ -1646,7 +1648,10 @@ export class SpineAnnotator {
   }
 
   deletePolygon(id) {
-    this.polygons = this.polygons.filter(p => p.id !== id)
+    // filter 대신 인덱스 기반: 혹시 id 가 중복돼도 정확히 하나만 제거
+    const idx = this.polygons.findIndex(p => p.id === id)
+    if (idx === -1) return
+    this.polygons.splice(idx, 1)
     if (this.selectedId === id) this.selectedId = null
     this.relabelAll()
     this.renderPolygons()
@@ -1777,13 +1782,22 @@ export class SpineAnnotator {
    */
   loadPolygons(polygons) {
     if (!Array.isArray(polygons)) return
-    this.polygons = polygons.map((p, i) => ({
-      id: p.id != null ? p.id : (Date.now() + i),
+    const mapped = polygons.map((p) => ({
+      id: p.id,
       label: p.label || '',
       points: Array.isArray(p.points) ? p.points.slice() : [],
       manualLabel: p.manualLabel === true || isExtraLabel(p.label),
       landmark: p.landmark === true || isPelvisPointLabel(p.label),
+      // shape 등 부가 필드 보존 (원/circle 등)
+      ...(p.shape ? { shape: p.shape } : {}),
     }))
+    // ⚠️ 그리기 카운터(polyIdCounter)가 1부터 시작하는데 저장된 폴리곤 id(이전 세션도
+    //    1부터)와 겹치면, 새로 그린 폴리곤이 로드된 것과 같은 id 를 갖게 되어
+    //    하나를 지울 때 둘 다 삭제됐습니다(예: L5 지우면 L4도 사라짐).
+    //    로드 시 id 유일성을 보장하고 카운터를 최대 id 뒤로 밀어둡니다.
+    const { polygons: uniqued, nextCounter } = assignUniqueIds(mapped, polyIdCounter)
+    this.polygons = uniqued
+    polyIdCounter = nextCounter
     this.selectedId = null
     this.normalizeVertebraLabelsByY({ force: false })
     // Keep manually saved labels if they exist. Only auto-label imported/legacy

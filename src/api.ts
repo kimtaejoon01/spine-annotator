@@ -371,22 +371,37 @@ api.get('/export', async (c) => {
     const images: any[] = []
     const annotations: any[] = []
     const categories = generateCocoCategories()
+    const catByName = new Map(categories.map(cat => [cat.name, cat]))
     let annId = 1
     let imgId = 1
+
+    // 조용한 데이터 손실 방지: export 에서 빠진 항목을 집계해 응답에 실어 보냅니다.
+    const warnings = {
+      images_missing_size: [] as string[],           // width/height 0 → 학습 파이프라인에서 깨질 수 있음
+      unknown_labels: {} as Record<string, number>,  // 카테고리에 없는 라벨(예: 제거된 FH_L/FH_R)
+      invalid_polygons: 0,
+    }
 
     for (const row of rows) {
       const polygons = parseStoredLabelData(row.polygons_json).polygons
       const width = row.image_width || 0
       const height = row.image_height || 0
+      if (!width || !height) warnings.images_missing_size.push(row.filename)
       images.push({ id: imgId, file_name: row.filename, width, height })
       for (const poly of polygons) {
         const label = poly.label || ''
-        const cat = categories.find(c => c.name === label)
-        if (!cat) continue
+        const cat = catByName.get(label)
+        if (!cat) {
+          warnings.unknown_labels[label || '(빈 라벨)'] = (warnings.unknown_labels[label || '(빈 라벨)'] || 0) + 1
+          continue
+        }
         // 과거 데이터 방어: 좌표가 짝수 개의 유한한 숫자가 아니면 스킵 (NaN annotation 방지)
         const rawPts = Array.isArray(poly.points) ? poly.points : []
         const pts = rawPts.map(Number)
-        if (pts.length < 6 || pts.length % 2 !== 0 || pts.some((n: number) => !Number.isFinite(n))) continue
+        if (pts.length < 6 || pts.length % 2 !== 0 || pts.some((n: number) => !Number.isFinite(n))) {
+          warnings.invalid_polygons++
+          continue
+        }
         annotations.push({
           id: annId++, image_id: imgId, category_id: cat.id,
           segmentation: [pts], bbox: polygonBbox(pts), area: polygonArea(pts),
@@ -396,7 +411,7 @@ api.get('/export', async (c) => {
       imgId++
     }
 
-    return c.json({ ok: true, images, annotations, categories })
+    return c.json({ ok: true, images, annotations, categories, warnings })
   } catch (err: any) {
     return c.json({ ok: false, error: err.message }, 500)
   }
@@ -412,15 +427,25 @@ function parseStoredLabelData(raw: string | null | undefined) {
   }
 }
 
+// ⚠️ 순서/인덱스는 public/static/labels.js 의 ALL_LABELS 와 반드시 동일해야 합니다.
+//    클라이언트 단일파일 export(coco.js)가 ALL_LABELS.indexOf(label)+1 을 쓰므로,
+//    두 export 경로의 category_id 를 맞추려면 여기도 같은 목록/순서를 써야 합니다.
+//    척추 25개(C1=1 … S1=25) 뒤에 골반/고관절 4개(HC_L=26 … HC_LAT=29)를 붙입니다.
+//    (예전에는 척추 25개만 만들어, HC_*/FH_LAT 라벨이 export 에서 조용히 빠졌습니다.)
+const COCO_ALL_LABELS = [
+  'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7',
+  'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12',
+  'L1', 'L2', 'L3', 'L4', 'L5',
+  'S1',
+  'HC_L', 'HC_R', 'FH_LAT', 'HC_LAT',
+]
+function cocoSupercategory(label: string) {
+  if (label === 'FH_LAT') return 'femoral_head'
+  if (label === 'HC_L' || label === 'HC_R' || label === 'HC_LAT') return 'hip_center'
+  return 'vertebra'
+}
 function generateCocoCategories() {
-  const cats: any[] = []
-  let id = 1
-  for (const prefix of ['C', 'T', 'L']) {
-    const max = prefix === 'C' ? 7 : prefix === 'T' ? 12 : 5
-    for (let i = 1; i <= max; i++) cats.push({ id: id++, name: `${prefix}${i}`, supercategory: 'vertebra' })
-  }
-  cats.push({ id: id++, name: 'S1', supercategory: 'vertebra' })
-  return cats
+  return COCO_ALL_LABELS.map((name, i) => ({ id: i + 1, name, supercategory: cocoSupercategory(name) }))
 }
 
 function polygonBbox(pts: number[]) {
