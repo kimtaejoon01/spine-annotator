@@ -353,11 +353,11 @@ async function saveReview() {
   const payload = {
     review: {
       human: state.review.human,
-      ai: state.review.ai,
+      ai: state.review.ai,                 // 검수 코너 교정 + 추체별 메모(AI 측) — 절대 덮어쓰면 안 됨
       imageNote: state.review.imageNote,
       method: $('rvMethod').value,
       auto: state.humanResult ? { angles: state.humanResult.angles } : null,
-      ai: state.aiResult ? { angles: state.aiResult.angles } : null,
+      ai_result: state.aiResult ? { angles: state.aiResult.angles } : null, // AI 자동측정 각도 스냅샷(별도 키)
       savedAt: new Date().toISOString(),
     },
   }

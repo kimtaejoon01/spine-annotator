@@ -33,9 +33,11 @@ export async function maskToBinary(blobOrUrl, { threshold = 127, maxDim = 1600 }
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('마스크 이미지를 열 수 없습니다'))
-    img.src = typeof src === 'string' ? src : URL.createObjectURL(src)
+    // Blob/File 로 받은 경우 ObjectURL 을 만들고, 로드/실패 시 반드시 해제(메모리 누수 방지)
+    const objUrl = typeof src === 'string' ? null : URL.createObjectURL(src)
+    img.onload = () => { if (objUrl) URL.revokeObjectURL(objUrl); resolve(img) }
+    img.onerror = () => { if (objUrl) URL.revokeObjectURL(objUrl); reject(new Error('마스크 이미지를 열 수 없습니다')) }
+    img.src = objUrl || src
   })
 }
 

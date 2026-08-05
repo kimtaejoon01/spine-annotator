@@ -344,7 +344,7 @@ export function validateAndFix(method, vertsPts, isC2Map, opts = {}) {
       if (Math.abs(tiltH(r.infVec) - med) > VALIDATION.MAX_NEIGHBOR_JUMP) { score += 1; reasons.push('이웃과 각도 급변') }
     }
     // (중) 추체 내 상·하 종판 모순
-    if (Math.abs(tiltH(r.supVec) - tiltH(r.infVec)) > VALIDATION.MAX_WEDGE) { score += 1; reasons.push('상·하 종판 모순') }
+    if (cobbAngle(r.supVec, r.infVec) > VALIDATION.MAX_WEDGE) { score += 1; reasons.push('상·하 종판 모순') }
 
     let quality = 'ok'
     if (score >= 2) {
@@ -410,6 +410,6 @@ export function computeSagittal(polygons, ranges = DEFAULT_RANGES, opts = {}) {
   const present = ORDER.filter(n => fits[n])
   const segmental = {}, wedge = {}
   for (let i = 0; i + 1 < present.length; i++) segmental[`${present[i]}_${present[i + 1]}`] = cobbAngle(INF(present[i]), SUP(present[i + 1]))
-  for (const n of present) wedge[n] = Math.abs(tiltH(fits[n].supVec) - tiltH(fits[n].infVec))
+  for (const n of present) wedge[n] = cobbAngle(fits[n].supVec, fits[n].infVec)
   return { corners, angles, segmental, wedge, present, quality, method }
 }

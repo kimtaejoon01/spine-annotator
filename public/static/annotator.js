@@ -1398,6 +1398,9 @@ export class SpineAnnotator {
     if (!poly) return
     if (!LABELS.includes(newLabel)) {
       poly.label = newLabel
+      // 골반점/추가 라벨도 수동 지정·랜드마크 보호 플래그를 유지해야 저장/보호 로직이 올바르게 동작
+      poly.manualLabel = true
+      poly.landmark = isPelvisPointLabel(newLabel) || poly.landmark === true
       this.renderPolygons()
       this.pushHistory()
       this.notifyPolygons()
@@ -1864,17 +1867,18 @@ export class SpineAnnotator {
     this.polygons = uniqued
     polyIdCounter = nextCounter
     this.selectedId = null
-    this.normalizeVertebraLabelsByY({ force: false })
-    // Keep manually saved labels if they exist. Only auto-label imported/legacy
-    // polygons that do not have labels yet.
+    // 저장된 라벨은 존중한다. 라벨이 빠진(레거시/가져온) 폴리곤이 있을 때만 자동 순서 라벨링을 수행.
+    // (이전엔 로드마다 normalizeVertebraLabelsByY 를 무조건 돌려, 일부러 비연속으로 라벨한
+    //  파일을 열면 라벨이 강제로 재지정되고 자동저장으로 이어져 저장본이 변형될 수 있었음.)
     const hasMissingLabel = this.polygons.some(p => !p.label || p.label === '?')
     if (hasMissingLabel) {
       this.relabelAll()
+      this.normalizeVertebraLabelsByY({ force: false })
     } else {
+      // 재지정 없이 시각적 위→아래 순서로만 정렬 (의도적 비연속 라벨 보존)
       this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
       this.polygons.sort((a, b) => a._centroidY - b._centroidY)
     }
-    this.normalizeVertebraLabelsByY({ force: false })
     this.renderPolygons()
     this.refreshPolygonVisualScale({ delayed: true })
     // 새 이미지에 대한 히스토리는 깨끗하게 시작

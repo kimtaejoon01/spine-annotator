@@ -1766,7 +1766,8 @@ function runAction(actionId) {
     case 'removeLastPoint':
       if (landmarkMode) return !!state.annotator.deleteLastLandmarkPoint?.()
       if (state.annotator.cancelOrDeleteLastCircle?.()) return true
-      state.annotator.removeLastPoint()
+      // 그리는 중이면 마지막 점 제거, 아니면 선택된 폴리곤 삭제 (main 동작 복원)
+      if (!state.annotator.removeLastPoint()) state.annotator.deleteSelected()
       return true
     case 'deleteSelected':
       state.annotator.deleteSelected()

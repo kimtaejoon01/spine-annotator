@@ -46,7 +46,12 @@ export function applyVisibilityState(annotator, state) {
 
   annotator.renderPolygons?.()
   if (annotator.polyLayer) {
-    annotator.polyLayer.visible(state.humanLabelVisible !== false)
+    // 랜드마크/종판 모드에서는 renderPolygons() 가 폴리곤 레이어를 숨기므로 그 결정을 덮어쓰지 않는다.
+    // (덮어쓰면 랜드마크 모드에서 파일 로드·토글 시 폴리곤 레이어가 다시 위로 떠버림)
+    const mode = annotator.__activeAnnotationMode || 'polygon'
+    if (mode === 'polygon') {
+      annotator.polyLayer.visible(state.humanLabelVisible !== false)
+    }
     annotator.polyLayer.batchDraw?.()
   }
 }
