@@ -89,7 +89,7 @@ function installReviewLink() {
   const link = document.createElement('a')
   link.id = 'labelReviewLink'
   link.className = 'btn-secondary'
-  link.href = '/label-review/'
+  link.href = '/label-review/index.html'
   link.title = '특정 라벨러 작업 검토 페이지'
   link.innerHTML = '<i class="fas fa-clipboard-check"></i> 검토'
   header.insertBefore(link, header.firstChild)
