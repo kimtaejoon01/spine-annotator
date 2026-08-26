@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/static/*",
+    "/label-review",
+    "/label-review/*",
+    "/favicon.ico"
+  ]
+}
