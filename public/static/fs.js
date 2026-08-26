@@ -103,6 +103,20 @@ export async function ensurePermission(handle) {
    ---------------------------------------------------------------- */
 
 /**
+ * showDirectoryPicker의 id는 브라우저가 선택 위치를 기억하는 용도입니다.
+ * 앱 내부 IndexedDB key와 달리 ':'/공백 등은 브라우저에서 거부될 수 있으므로
+ * ASCII 영숫자, '_'와 '-'만 남긴 안전한 별도 ID를 사용합니다.
+ */
+function safePickerId(value, fallback = 'spine-annotator-folder') {
+  const sanitized = String(value ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+  return sanitized || fallback
+}
+
+/**
  * 폴더 선택 다이얼로그 열고 핸들 저장
  * @returns {Promise<FileSystemDirectoryHandle|null>}
  */
@@ -207,7 +221,9 @@ export async function findFileByName(dirHandle, name) {
 export async function pickFolderAs(key, opts = {}) {
   if (!isSupported()) throw new Error('이 브라우저는 폴더 연결을 지원하지 않습니다. Chrome 또는 Edge를 사용해주세요.')
   try {
-    const handle = await window.showDirectoryPicker({ id: opts.id || key, mode: 'read', startIn: opts.startIn || 'pictures' })
+    const pickerId = safePickerId(opts.id || key)
+    const handle = await window.showDirectoryPicker({ id: pickerId, mode: 'read', startIn: opts.startIn || 'pictures' })
+    // 저장 키는 기존 값을 그대로 유지해 이전에 저장한 폴더 핸들과 호환합니다.
     await idbSet(key, handle)
     return handle
   } catch (err) {
