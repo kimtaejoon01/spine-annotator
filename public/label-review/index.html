@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spine Label Review</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/konva@9.3.6/konva.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; overflow: hidden; background: #0d1117; color: #e6edf3; font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .lr-app { height: 100vh; display: flex; flex-direction: column; min-width: 0; }
+    .lr-head { min-height: 58px; display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid #30363d; background: #161b22; box-sizing: border-box; }
+    .lr-brand { display: flex; align-items: center; gap: 9px; font-weight: 800; white-space: nowrap; }
+    .lr-head-file { min-width: 0; flex: 1; }
+    .lr-head-file strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+    .lr-head-file small { color: #8b949e; font-size: 11px; }
+    .lr-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .lr-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 260px minmax(360px, 1fr) 310px; }
+    .lr-side { min-height: 0; overflow: auto; background: #0d1117; padding: 12px; box-sizing: border-box; }
+    .lr-side.left { border-right: 1px solid #30363d; }
+    .lr-side.right { border-left: 1px solid #30363d; }
+    .lr-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #010409; }
+    .lr-toolbar { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid #21262d; background: #0d1117; flex-wrap: wrap; }
+    .lr-stage { flex: 1; min-height: 260px; position: relative; }
+    .lr-section { margin-bottom: 14px; }
+    .lr-section h3 { margin: 0 0 8px; font-size: 12px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .lr-stack { display: grid; gap: 8px; }
+    .lr-row { display: flex; gap: 7px; align-items: center; }
+    .lr-row > * { min-width: 0; }
+    .lr-select, .lr-input, .lr-textarea { width: 100%; box-sizing: border-box; border: 1px solid #30363d; background: #161b22; color: #e6edf3; border-radius: 7px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .lr-input:focus, .lr-select:focus, .lr-textarea:focus { border-color: #58a6ff; box-shadow: 0 0 0 2px rgba(88,166,255,.16); }
+    .lr-textarea { min-height: 130px; resize: vertical; line-height: 1.45; }
+    .lr-btn { border: 1px solid #30363d; background: #21262d; color: #e6edf3; border-radius: 7px; min-height: 36px; padding: 7px 10px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+    .lr-btn:hover { background: #30363d; }
+    .lr-btn.primary { background: #1f6feb; border-color: #388bfd; color: white; }
+    .lr-btn.success { background: #238636; border-color: #2ea043; color: white; }
+    .lr-btn.quick { flex: 1; min-width: 95px; }
+    .lr-btn.warning { border-color: #d29922; color: #f2cc60; }
+    .lr-btn:disabled { opacity: .45; cursor: default; }
+    .lr-status { color: #8b949e; font-size: 11px; line-height: 1.4; }
+    .lr-progress { padding: 8px 10px; border-radius: 7px; background: #161b22; border: 1px solid #21262d; font-size: 12px; color: #c9d1d9; }
+    .lr-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .lr-file button { width: 100%; border: 1px solid transparent; background: transparent; color: #c9d1d9; border-radius: 7px; padding: 8px 9px; text-align: left; cursor: pointer; }
+    .lr-file button:hover { background: #161b22; }
+    .lr-file.active button { background: #1f2937; border-color: #388bfd; }
+    .lr-file-name { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+    .lr-file-meta { display: flex; justify-content: space-between; gap: 6px; margin-top: 4px; color: #8b949e; font-size: 10px; }
+    .lr-file-meta .done { color: #3fb950; font-weight: 700; }
+    .lr-empty { padding: 16px 8px; color: #8b949e; font-size: 12px; text-align: center; }
+    .lr-tool-status { flex: 1; color: #8b949e; font-size: 12px; min-width: 170px; }
+    .lr-tool-status.active { color: #f2cc60; font-weight: 700; }
+    .lr-source { display: grid; grid-template-columns: 90px 1fr; gap: 7px; font-size: 12px; padding: 7px 0; border-bottom: 1px solid #21262d; }
+    .lr-source span:first-child { color: #8b949e; }
+    .lr-additions { display: grid; gap: 5px; }
+    .lr-add-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #161b22; border: 1px solid #21262d; padding: 7px 8px; border-radius: 7px; }
+    .lr-add-row span { min-width: 0; }
+    .lr-add-row strong { font-size: 12px; }
+    .lr-add-row small { color: #8b949e; margin-left: 6px; }
+    .lr-add-row button { border: 0; background: transparent; color: #f85149; cursor: pointer; }
+    .lr-add-empty { color: #8b949e; font-size: 12px; padding: 8px 0; }
+    .lr-saved { font-size: 12px; color: #8b949e; }
+    .lr-saved.dirty { color: #f2cc60; }
+    .lr-saved.done { color: #3fb950; font-weight: 700; }
+    .lr-saved.error { color: #f85149; }
+    .lr-bottom-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 7px; }
+    .lr-check { display: inline-flex; align-items: center; gap: 6px; color: #c9d1d9; font-size: 12px; white-space: nowrap; }
+    .lr-details { border: 1px solid #21262d; border-radius: 7px; padding: 7px 8px; background: #0d1117; }
+    .lr-details summary { cursor: pointer; color: #c9d1d9; font-size: 12px; font-weight: 700; }
+    .lr-details .lr-row { margin-top: 8px; }
+    .lr-toast { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 16px); opacity: 0; pointer-events: none; background: #3b1111; border: 1px solid #f85149; color: #fff; border-radius: 8px; padding: 10px 14px; font-size: 12px; transition: .18s ease; z-index: 9999; max-width: min(560px, calc(100vw - 30px)); }
+    .lr-toast.show { transform: translate(-50%, 0); opacity: 1; }
+    @media (max-width: 1000px) { .lr-body { grid-template-columns: 220px minmax(320px, 1fr); } .lr-side.right { display: none; } }
+    @media (max-width: 720px) { body { overflow: auto; } .lr-app { height: auto; min-height: 100vh; } .lr-head { align-items: flex-start; flex-wrap: wrap; } .lr-body { display: block; } .lr-side.left, .lr-side.right { display: block; border: 0; max-height: none; } .lr-main { height: 68vh; min-height: 480px; } }
+  </style>
+</head>
+<body>
+  <div class="lr-app">
+    <header class="lr-head">
+      <div class="lr-brand"><i class="fas fa-clipboard-check"></i><span>라벨 검토</span></div>
+      <div class="lr-head-file">
+        <strong id="lrFileName">파일을 선택하세요</strong>
+        <small><span id="lrPosition">0 / 0</span> · <span id="lrPreload"></span></small>
+      </div>
+      <div class="lr-head-actions">
+        <input id="lrReviewer" class="lr-input" style="width:130px" placeholder="검토자 이름" />
+        <button id="lrPrev" class="lr-btn" type="button"><i class="fas fa-chevron-left"></i> 이전</button>
+        <button id="lrNext" class="lr-btn" type="button">다음 <i class="fas fa-chevron-right"></i></button>
+        <a class="lr-btn" href="/annotate" style="text-decoration:none;display:inline-flex;align-items:center">Annotate</a>
+      </div>
+    </header>
+
+    <div class="lr-body">
+      <aside class="lr-side left">
+        <section class="lr-section">
+          <h3>검토 대상</h3>
+          <div class="lr-stack">
+            <select id="lrTargetLabeler" class="lr-select"></select>
+            <div class="lr-row">
+              <select id="lrViewFilter" class="lr-select">
+                <option value="LAT">LAT</option>
+                <option value="AP">AP</option>
+                <option value="all">전체 뷰</option>
+              </select>
+              <select id="lrReviewFilter" class="lr-select">
+                <option value="pending">미검토</option>
+                <option value="all">전체</option>
+                <option value="done">완료</option>
+              </select>
+            </div>
+            <input id="lrSearch" class="lr-input" placeholder="파일명 검색" />
+            <div class="lr-progress"><strong id="lrCount">0</strong>개 표시 · <span id="lrProgress">검토할 파일 없음</span></div>
+          </div>
+        </section>
+
+        <section class="lr-section">
+          <h3>이미지 폴더</h3>
+          <div class="lr-stack">
+            <button id="lrConnectFolder" class="lr-btn" type="button"><i class="fas fa-folder-open"></i> 이미지 폴더 연결</button>
+            <button id="lrRefresh" class="lr-btn" type="button"><i class="fas fa-sync"></i> 서버 목록 새로고침</button>
+            <div id="lrFolderStatus" class="lr-status">폴더 미연결</div>
+            <div id="lrServerStatus" class="lr-status">서버 목록 대기 중</div>
+          </div>
+        </section>
+
+        <ul id="lrFileList" class="lr-files"></ul>
+      </aside>
+
+      <main class="lr-main">
+        <div class="lr-toolbar">
+          <button id="lrS1Sup" class="lr-btn quick primary" type="button">S1 상종판</button>
+          <button id="lrHcLat" class="lr-btn quick" type="button">HC_LAT 점</button>
+          <button id="lrFhLat" class="lr-btn quick" type="button">FH_LAT 원</button>
+          <button id="lrCancelTool" class="lr-btn" type="button" disabled>취소</button>
+          <span id="lrToolStatus" class="lr-tool-status">도구를 누를 때만 캔버스 입력이 활성화됩니다.</span>
+          <label class="lr-check"><input id="lrToggleLabels" type="checkbox" checked /> 원 라벨 보기</label>
+        </div>
+        <div id="lrStage" class="lr-stage"></div>
+      </main>
+
+      <aside class="lr-side right">
+        <section class="lr-section">
+          <h3>현재 파일</h3>
+          <div class="lr-source"><span>원 라벨러</span><strong id="lrSourceLabeler">—</strong></div>
+          <div class="lr-source"><span>저장 상태</span><strong id="lrSaved" class="lr-saved">—</strong></div>
+        </section>
+
+        <section class="lr-section">
+          <h3>추가 표시</h3>
+          <div id="lrAdditions" class="lr-additions"><div class="lr-add-empty">추가한 표시가 없습니다.</div></div>
+          <details class="lr-details" style="margin-top:8px">
+            <summary>다른 종판 찍기</summary>
+            <div class="lr-row">
+              <select id="lrVertebra" class="lr-select"></select>
+              <select id="lrEndplateSide" class="lr-select">
+                <option value="SUP">상종판</option>
+                <option value="INF">하종판</option>
+              </select>
+              <button id="lrArmEndplate" class="lr-btn" type="button">찍기</button>
+            </div>
+          </details>
+        </section>
+
+        <section class="lr-section">
+          <h3>메모</h3>
+          <textarea id="lrMemo" class="lr-textarea" placeholder="이 파일에서 수정하거나 확인할 점을 적으세요."></textarea>
+        </section>
+
+        <section class="lr-section">
+          <div class="lr-bottom-actions">
+            <button id="lrSave" class="lr-btn" type="button"><i class="fas fa-save"></i> 저장</button>
+            <button id="lrDoneNext" class="lr-btn success" type="button"><i class="fas fa-check"></i> 검토 완료 + 다음</button>
+          </div>
+          <div class="lr-status" style="margin-top:8px">메모와 추가 표시는 자동 저장됩니다. 원 라벨 데이터는 덮어쓰지 않습니다.</div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  <div id="lrToast" class="lr-toast"></div>
+  <script type="module" src="/static/label-review.js"></script>
+</body>
+</html>
