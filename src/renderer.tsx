@@ -26,6 +26,8 @@ export const renderer = jsxRenderer(({ children }) => {
         <script type="module" src="/static/app.js"></script>
         {/* annotate 보조 기능: 라벨러 필터 + 검토 페이지 링크 */}
         <script type="module" src="/static/labeler-filter.js"></script>
+        {/* annotate/label-review 공통 우선 검토 별표 */}
+        <script type="module" src="/static/priority-review.js"></script>
         {/* label-review 전용: Google Drive Desktop 전체 이미지 로컬 워밍업 */}
         <script type="module" src="/static/label-review-warmup.js"></script>
       </body>
