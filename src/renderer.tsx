@@ -24,6 +24,8 @@ export const renderer = jsxRenderer(({ children }) => {
         {children}
         {/* 앱 메인 스크립트 (모듈 분리) */}
         <script type="module" src="/static/app.js"></script>
+        {/* annotate 보조 기능: 라벨러 필터 + 검토 페이지 링크 */}
+        <script type="module" src="/static/labeler-filter.js"></script>
       </body>
     </html>
   )
