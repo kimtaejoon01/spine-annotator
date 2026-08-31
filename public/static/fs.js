@@ -10,6 +10,7 @@ const DB_NAME = 'spine-annotator-fs'
 const DB_VERSION = 1
 const STORE_NAME = 'handles'
 const HANDLE_KEY = 'imageFolder'
+const LEGACY_REVIEW_HANDLE_KEY = 'lr:imagesFolder'
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'bmp'])
 
@@ -64,6 +65,16 @@ async function idbDelete(key) {
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
+}
+
+function isSharedImageFolderKey(key) {
+  return key === HANDLE_KEY || key === LEGACY_REVIEW_HANDLE_KEY
+}
+
+async function saveSharedImageFolder(handle) {
+  await idbSet(HANDLE_KEY, handle)
+  // 예전 Label Review가 별도 key를 썼으므로 같이 갱신해 구버전과도 호환합니다.
+  await idbSet(LEGACY_REVIEW_HANDLE_KEY, handle)
 }
 
 /* ----------------------------------------------------------------
@@ -130,7 +141,7 @@ export async function pickFolder() {
       mode: 'read',
       startIn: 'pictures',
     })
-    await idbSet(HANDLE_KEY, handle)
+    await saveSharedImageFolder(handle)
     return handle
   } catch (err) {
     // 사용자가 다이얼로그 취소
@@ -145,7 +156,12 @@ export async function pickFolder() {
  */
 export async function restoreFolder() {
   try {
-    const handle = await idbGet(HANDLE_KEY)
+    let handle = await idbGet(HANDLE_KEY)
+    if (!handle) {
+      // 예전 Label Review에서만 연결했던 사용자도 자동 승격합니다.
+      handle = await idbGet(LEGACY_REVIEW_HANDLE_KEY)
+      if (handle) await saveSharedImageFolder(handle)
+    }
     return handle || null
   } catch (err) {
     console.warn('[fs] restore failed:', err)
@@ -159,6 +175,7 @@ export async function restoreFolder() {
 export async function forgetFolder() {
   try {
     await idbDelete(HANDLE_KEY)
+    await idbDelete(LEGACY_REVIEW_HANDLE_KEY)
   } catch (err) {
     console.warn('[fs] forget failed:', err)
   }
@@ -223,8 +240,11 @@ export async function pickFolderAs(key, opts = {}) {
   try {
     const pickerId = safePickerId(opts.id || key)
     const handle = await window.showDirectoryPicker({ id: pickerId, mode: 'read', startIn: opts.startIn || 'pictures' })
-    // 저장 키는 기존 값을 그대로 유지해 이전에 저장한 폴더 핸들과 호환합니다.
-    await idbSet(key, handle)
+    if (isSharedImageFolderKey(key)) {
+      await saveSharedImageFolder(handle)
+    } else {
+      await idbSet(key, handle)
+    }
     return handle
   } catch (err) {
     if (err.name === 'AbortError') return null
@@ -234,7 +254,15 @@ export async function pickFolderAs(key, opts = {}) {
 
 export async function restoreFolderAs(key) {
   try {
-    const handle = await idbGet(key)
+    let handle
+    if (isSharedImageFolderKey(key)) {
+      // Label Review도 Annotate와 동일한 imageFolder를 우선 사용합니다.
+      handle = await idbGet(HANDLE_KEY)
+      if (!handle) handle = await idbGet(LEGACY_REVIEW_HANDLE_KEY)
+      if (handle) await saveSharedImageFolder(handle)
+    } else {
+      handle = await idbGet(key)
+    }
     if (!handle) return null
     const perm = await queryPermission(handle)
     if (perm === 'granted') return handle
@@ -243,5 +271,12 @@ export async function restoreFolderAs(key) {
 }
 
 export async function forgetFolderAs(key) {
-  try { await idbSet(key, null) } catch (e) {}
+  try {
+    if (isSharedImageFolderKey(key)) {
+      await idbDelete(HANDLE_KEY)
+      await idbDelete(LEGACY_REVIEW_HANDLE_KEY)
+    } else {
+      await idbDelete(key)
+    }
+  } catch (e) {}
 }
