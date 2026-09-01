@@ -43,12 +43,20 @@ function authHeaders(extra = {}) { return { 'X-Auth-Token': 'public-access', ...
 function esc(value) { return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
 
 function init() {
-  state.annotator = new SpineAnnotator({ container: 'lrStage', onPolygonsChange, onZoomChange: () => renderOriginalLandmarks() })
+  state.annotator = new SpineAnnotator({
+    container: 'lrStage',
+    onPolygonsChange,
+    onZoomChange: () => {
+      renderOriginalLandmarks()
+      applyReviewVisualStyles()
+    },
+  })
   state.annotator.readOnly = true
   state.annotator.setTool('draw')
   state.landmarkLayer = new Konva.Layer({ listening: false })
   state.annotator.stage.add(state.landmarkLayer)
   installOriginalNotePanel()
+  installReviewComparisonUi()
   populateLabelers(); populateVertebrae(); restorePreferences(); bindEvents()
   refreshServerState().catch(showError)
   restoreImageFolder().catch(showError)
@@ -69,6 +77,45 @@ function installOriginalNotePanel() {
     <div id="lrOriginalNoteMeta" class="lr-status" style="margin-top:5px"></div>
   `
   reviewMemoSection.parentNode.insertBefore(section, reviewMemoSection)
+}
+
+function installReviewComparisonUi() {
+  // HC_LAT은 Label Review에서 사용하지 않습니다.
+  $('lrHcLat')?.remove()
+
+  const toolbar = document.querySelector('.lr-toolbar')
+  if (!toolbar) return
+
+  if (!$('lrBodyVertebra')) {
+    const select = document.createElement('select')
+    select.id = 'lrBodyVertebra'
+    select.className = 'lr-select'
+    select.title = '검수할 척추체 선택'
+    select.style.width = '78px'
+    select.style.flex = '0 0 auto'
+
+    const button = document.createElement('button')
+    button.id = 'lrBodyPoly'
+    button.type = 'button'
+    button.className = 'lr-btn quick'
+    button.innerHTML = '<i class="fas fa-draw-polygon"></i> 추체 검수'
+    button.title = '선택한 척추체의 검수자 폴리곤을 새로 그립니다.'
+
+    const anchor = $('lrCancelTool')
+    toolbar.insertBefore(select, anchor || null)
+    toolbar.insertBefore(button, anchor || null)
+  }
+
+  // 기존 '원 라벨 보기' 토글을 원본/검수본 비교 토글로 교체합니다.
+  const oldToggle = $('lrToggleLabels')
+  const oldLabel = oldToggle?.closest?.('label')
+  if (oldLabel && !$('lrToggleOriginals')) {
+    oldLabel.innerHTML = '<input id="lrToggleOriginals" type="checkbox" checked /> 원본'
+    const reviewLabel = document.createElement('label')
+    reviewLabel.className = 'lr-check'
+    reviewLabel.innerHTML = '<input id="lrToggleReviews" type="checkbox" checked /> 검수본'
+    oldLabel.insertAdjacentElement('afterend', reviewLabel)
+  }
 }
 
 function renderOriginalNote(note) {
@@ -93,7 +140,14 @@ function renderOriginalNote(note) {
 function populateLabelers() {
   $('lrTargetLabeler').innerHTML = LABELERS.map(l => `<option value="${esc(l.id)}">${esc(l.name)}${l.title ? ' · ' + esc(l.title) : ''}</option>`).join('')
 }
-function populateVertebrae() { $('lrVertebra').innerHTML = VERTEBRAE.map(v => `<option value="${v}">${v}</option>`).join(''); $('lrVertebra').value = 'S1' }
+function populateVertebrae() {
+  const html = VERTEBRAE.map(v => `<option value="${v}">${v}</option>`).join('')
+  if ($('lrVertebra')) { $('lrVertebra').innerHTML = html; $('lrVertebra').value = 'S1' }
+  if ($('lrBodyVertebra')) {
+    $('lrBodyVertebra').innerHTML = html
+    try { $('lrBodyVertebra').value = localStorage.getItem('lr:bodyVertebra') || 'L1' } catch { $('lrBodyVertebra').value = 'L1' }
+  }
+}
 function restorePreferences() { try { $('lrTargetLabeler').value = localStorage.getItem('lr:targetLabeler') || 'kim'; $('lrViewFilter').value = localStorage.getItem('lr:viewFilter') || 'LAT'; $('lrReviewFilter').value = localStorage.getItem('lr:reviewFilter') || 'pending'; $('lrReviewer').value = localStorage.getItem('lr:reviewer') || '' } catch {} }
 
 function bindEvents() {
@@ -106,15 +160,31 @@ function bindEvents() {
   $('lrReviewer').addEventListener('input', () => { try { localStorage.setItem('lr:reviewer', $('lrReviewer').value.trim()) } catch {}; if (state.current) markDirty() })
   $('lrMemo').addEventListener('input', () => { state.review.memo = $('lrMemo').value; markDirty() })
   $('lrPrev').addEventListener('click', () => step(-1)); $('lrNext').addEventListener('click', () => step(1)); $('lrSave').addEventListener('click', () => saveReview()); $('lrDoneNext').addEventListener('click', finishAndNext)
-  $('lrToggleLabels').addEventListener('change', applyLabelVisibility); $('lrCancelTool').addEventListener('click', cancelTool)
+  $('lrToggleOriginals')?.addEventListener('change', applyLabelVisibility)
+  $('lrToggleReviews')?.addEventListener('change', applyLabelVisibility)
+  $('lrCancelTool').addEventListener('click', cancelTool)
   $('lrS1Sup').addEventListener('click', () => armTool('S1_SUP', 'endplate', 'S1 상종판'))
-  $('lrHcLat').addEventListener('click', () => armTool('HC_LAT', 'point', 'HC_LAT 중심점'))
   $('lrFhLat').addEventListener('click', () => armTool('FH_LAT', 'circle', 'FH_LAT 원'))
+  $('lrBodyPoly')?.addEventListener('click', () => {
+    const v = $('lrBodyVertebra')?.value || 'L1'
+    armTool(v, 'polygon', `${v} 추체 검수`)
+  })
+  $('lrBodyVertebra')?.addEventListener('change', () => { try { localStorage.setItem('lr:bodyVertebra', $('lrBodyVertebra').value) } catch {} })
   $('lrArmEndplate').addEventListener('click', () => { const v=$('lrVertebra').value, side=$('lrEndplateSide').value; armTool(`${v}_${side}`, 'endplate', `${v} ${side==='SUP'?'상':'하'}종판`) })
   document.addEventListener('keydown', e => {
     if (['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)) return
     if (e.code==='Space') { e.preventDefault(); state.annotator.setPanMode?.(true); return }
     if ((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s') { e.preventDefault(); saveReview(); return }
+    if (e.code==='KeyQ' && state.activeTool?.mode==='polygon') {
+      e.preventDefault()
+      state.annotator?.finishDrawing?.()
+      return
+    }
+    if (e.code==='KeyW' && state.activeTool?.mode==='polygon') {
+      e.preventDefault()
+      state.annotator?.finishDrawing?.({ angularSort: true })
+      return
+    }
     if (e.code==='KeyE' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       const removed = state.annotator?.removeLastPoint?.()
@@ -195,9 +265,94 @@ async function loadOriginalNoteData(filename){
   return note
 }
 
-function renderCombined(){ state.suppressChanges=true; const originals=state.originalPolygons.map(p=>({...p,_lr_original:true})), additions=state.review.additions.map(p=>({...p,reviewOnly:true,manualLabel:true})); state.annotator.loadPolygons([...originals,...additions]); state.annotator.readOnly=true; state.suppressChanges=false; state.annotator.polyLayer?.moveToTop?.(); state.annotator.stage?.batchDraw?.() }
-function renderOriginalLandmarks(){ const layer=state.landmarkLayer; if(!layer||!state.annotator)return; layer.destroyChildren(); const by=new Map((state.originalLandmarks||[]).map(l=>[String(l.label||'').toUpperCase(),l])), scale=Math.max(.001,state.annotator.stage?.scaleX?.()||1); for(const v of VERTEBRAE){ const pts=CORNERS.map(s=>by.get(`${v}_${s}`)).filter(Boolean); if(pts.length===4){ const cx=pts.reduce((n,p)=>n+Number(p.x),0)/4, cy=pts.reduce((n,p)=>n+Number(p.y),0)/4, sorted=[...pts].sort((a,b)=>Math.atan2(Number(a.y)-cy,Number(a.x)-cx)-Math.atan2(Number(b.y)-cy,Number(b.x)-cx)), color=getRegionColor(v); layer.add(new Konva.Line({points:sorted.flatMap(p=>[Number(p.x),Number(p.y)]),closed:true,stroke:color,strokeWidth:1.8/scale,fill:color+'22',listening:false})); layer.add(new Konva.Text({x:cx,y:cy,text:v,fontSize:14/scale,fill:'#fff',stroke:'#111827',strokeWidth:1/scale,listening:false,offsetX:8/scale,offsetY:7/scale})) } } for(const label of ['HC_LAT','FH_LAT']){ const p=by.get(label); if(!p)continue; const color=getRegionColor(label); layer.add(new Konva.Circle({x:Number(p.x),y:Number(p.y),radius:5/scale,fill:color,stroke:'#fff',strokeWidth:1.2/scale,listening:false})) } layer.moveToTop(); layer.batchDraw() }
-function applyLabelVisibility(){ const show=$('lrToggleLabels').checked; state.annotator?.polyLayer?.visible?.(show); state.landmarkLayer?.visible?.(show); state.annotator?.stage?.batchDraw?.() }
+function renderCombined(){
+  state.suppressChanges=true
+  const originals=state.originalPolygons.map(p=>({...p,_lr_original:true}))
+  const additions=state.review.additions.map(p=>({...p,reviewOnly:true,manualLabel:true}))
+  state.annotator.loadPolygons([...originals,...additions])
+  state.annotator.readOnly=true
+  state.suppressChanges=false
+  state.annotator.polyLayer?.moveToTop?.()
+  applyReviewVisualStyles()
+  applyLabelVisibility()
+  state.annotator.stage?.batchDraw?.()
+}
+
+function getGroupShape(group) {
+  const children = group?.getChildren?.() || []
+  for (const child of children) if (child?.getClassName?.() === 'Line') return child
+  return null
+}
+function getGroupText(group) {
+  const children = group?.getChildren?.() || []
+  for (const child of children) if (child?.getClassName?.() === 'Text') return child
+  return null
+}
+function getGroupLabelBg(group) {
+  const children = group?.getChildren?.() || []
+  for (const child of children) if (child?.getClassName?.() === 'Rect') return child
+  return null
+}
+
+function applyReviewVisualStyles(){
+  const layer=state.annotator?.polyLayer
+  if(!layer)return
+  const groups=layer.getChildren?.()||[]
+  const originalCount=state.originalPolygons.length
+  const reviewedLabels=new Set((state.review.additions||[]).filter(p=>VERTEBRAE.includes(String(p.label||''))).map(p=>String(p.label)))
+  const scale=Math.max(.001,state.annotator?.stage?.scaleX?.()||1)
+
+  groups.forEach((group,index)=>{
+    const isOriginal=index<originalCount
+    const poly=isOriginal?state.originalPolygons[index]:state.review.additions[index-originalCount]
+    if(!poly)return
+    const shape=getGroupShape(group)
+    const text=getGroupText(group)
+    const bg=getGroupLabelBg(group)
+    const label=String(poly.label||'')
+
+    if(shape){
+      shape.fillEnabled?.(false)
+      if(isOriginal){
+        shape.stroke?.(getRegionColor(label))
+        shape.strokeWidth?.(1.35/scale)
+        shape.dash?.([7/scale,5/scale])
+        shape.opacity?.(reviewedLabels.has(label)?0.30:0.55)
+      }else{
+        shape.stroke?.('#22d3ee')
+        shape.strokeWidth?.(3.0/scale)
+        shape.dash?.([])
+        shape.opacity?.(1)
+      }
+    }
+
+    if(isOriginal){
+      const dim=reviewedLabels.has(label)
+      text?.opacity?.(dim?0:0.58)
+      bg?.opacity?.(dim?0:0.30)
+    }else{
+      text?.fill?.('#ecfeff')
+      text?.opacity?.(1)
+      bg?.fill?.('#0891b2')
+      bg?.opacity?.(0.90)
+    }
+  })
+  layer.batchDraw?.()
+}
+
+function renderOriginalLandmarks(){ const layer=state.landmarkLayer; if(!layer||!state.annotator)return; layer.destroyChildren(); const by=new Map((state.originalLandmarks||[]).map(l=>[String(l.label||'').toUpperCase(),l])), scale=Math.max(.001,state.annotator.stage?.scaleX?.()||1); const reviewedLabels=new Set((state.review.additions||[]).filter(p=>VERTEBRAE.includes(String(p.label||''))).map(p=>String(p.label))); for(const v of VERTEBRAE){ const pts=CORNERS.map(s=>by.get(`${v}_${s}`)).filter(Boolean); if(pts.length===4){ const cx=pts.reduce((n,p)=>n+Number(p.x),0)/4, cy=pts.reduce((n,p)=>n+Number(p.y),0)/4, sorted=[...pts].sort((a,b)=>Math.atan2(Number(a.y)-cy,Number(a.x)-cx)-Math.atan2(Number(b.y)-cy,Number(b.x)-cx)), color=getRegionColor(v), dim=reviewedLabels.has(v); layer.add(new Konva.Line({points:sorted.flatMap(p=>[Number(p.x),Number(p.y)]),closed:true,stroke:color,strokeWidth:1.25/scale,dash:[6/scale,5/scale],opacity:dim?.22:.45,listening:false})); if(!dim) layer.add(new Konva.Text({x:cx,y:cy,text:v,fontSize:12/scale,fill:'#fff',opacity:.55,stroke:'#111827',strokeWidth:1/scale,listening:false,offsetX:7/scale,offsetY:6/scale})) } } for(const label of ['FH_LAT']){ const p=by.get(label); if(!p)continue; const color=getRegionColor(label); layer.add(new Konva.Circle({x:Number(p.x),y:Number(p.y),radius:5/scale,fillEnabled:false,stroke:color,strokeWidth:1.4/scale,opacity:.6,listening:false})) } layer.batchDraw(); state.annotator.polyLayer?.moveToTop?.(); applyReviewVisualStyles() }
+function applyLabelVisibility(){
+  const showOriginal=$('lrToggleOriginals')?.checked!==false
+  const showReview=$('lrToggleReviews')?.checked!==false
+  const layer=state.annotator?.polyLayer
+  const groups=layer?.getChildren?.()||[]
+  const originalCount=state.originalPolygons.length
+  groups.forEach((group,index)=>group.visible?.(index<originalCount?showOriginal:showReview))
+  layer?.visible?.(showOriginal||showReview)
+  state.landmarkLayer?.visible?.(showOriginal)
+  applyReviewVisualStyles()
+  state.annotator?.stage?.batchDraw?.()
+}
 
 function armTool(label,mode,display){
   if(!state.current)return
@@ -207,16 +362,32 @@ function armTool(label,mode,display){
   state.annotator.readOnly=false
   state.annotator.setTool('draw')
   state.annotator.setPendingLabel(label,mode)
-  $('lrToolStatus').textContent=mode==='point'
-    ? `${display}: 위치를 1번 클릭하세요 · Esc: 도구 취소`
-    : `${display}: 기준점을 2번 클릭하세요 · E: 마지막 점 취소 · Esc: 도구 취소`
+  if(mode==='point') $('lrToolStatus').textContent=`${display}: 위치를 1번 클릭하세요 · Esc: 도구 취소`
+  else if(mode==='polygon') $('lrToolStatus').textContent=`${display}: 윤곽점을 찍고 Q로 완료 · E: 마지막 점 취소 · W: 각도순 완료 · Esc: 취소`
+  else $('lrToolStatus').textContent=`${display}: 기준점을 2번 클릭하세요 · E: 마지막 점 취소 · Esc: 도구 취소`
   $('lrToolStatus').classList.add('active')
   $('lrCancelTool').disabled=false
 }
 function cancelTool(resetText=true){ if(!state.annotator)return; state.annotator.readOnly=true; state.annotator.setPendingLabel?.(null,'polygon'); state.annotator.cancelDrawing?.(); state.activeTool=null; $('lrCancelTool').disabled=true; $('lrToolStatus').classList.remove('active'); if(resetText)$('lrToolStatus').textContent='도구를 누를 때만 캔버스 입력이 활성화됩니다.' }
-function onPolygonsChange(){ if(state.suppressChanges||!state.activeTool||!state.annotator)return; const tool=state.activeTool, fresh=(state.annotator.polygons||[]).filter(p=>!tool.beforeIds.has(String(p.id))); if(!fresh.length)return; const clean=serializePolygon(fresh[fresh.length-1]); clean.reviewOnly=true; clean.manualLabel=true; clean._review_id=`rv_${Date.now()}_${Math.random().toString(36).slice(2,7)}`; state.review.additions.push(clean); cancelTool(false); renderCombined(); renderAdditionList(); $('lrToolStatus').textContent=`${tool.display} 추가됨`; markDirty() }
+function onPolygonsChange(){
+  if(state.suppressChanges||!state.activeTool||!state.annotator)return
+  const tool=state.activeTool, fresh=(state.annotator.polygons||[]).filter(p=>!tool.beforeIds.has(String(p.id)))
+  if(!fresh.length)return
+  const clean=serializePolygon(fresh[fresh.length-1])
+  clean.reviewOnly=true
+  clean.manualLabel=true
+  clean._review_id=`rv_${Date.now()}_${Math.random().toString(36).slice(2,7)}`
+  if(tool.mode==='polygon'&&VERTEBRAE.includes(tool.label)){
+    clean._review_kind='vertebra-review'
+    // 같은 척추체는 검수본을 하나만 유지하고 새로 그리면 교체합니다.
+    state.review.additions=(state.review.additions||[]).filter(p=>!(VERTEBRAE.includes(String(p.label||''))&&String(p.label)===String(tool.label)))
+  }
+  state.review.additions.push(clean)
+  cancelTool(false)
+  renderCombined(); renderAdditionList(); $('lrToolStatus').textContent=`${tool.display} 추가됨`; markDirty()
+}
 function serializePolygon(p){ const out={...p,points:Array.isArray(p.points)?p.points.map(Number):[]}; delete out._lr_original; delete out._centroidY; return out }
-function renderAdditionList(){ const box=$('lrAdditions'), items=state.review.additions||[]; if(!items.length){box.innerHTML='<div class="lr-add-empty">추가한 표시가 없습니다.</div>';return} box.innerHTML=items.map((p,i)=>`<div class="lr-add-row"><span><strong>${esc(p.label||'표시')}</strong><small>${esc(p.shape||(p.landmark?'point':'annotation'))}</small></span><button type="button" data-remove="${i}"><i class="fas fa-times"></i></button></div>`).join(''); box.querySelectorAll('[data-remove]').forEach(btn=>btn.addEventListener('click',()=>{state.review.additions.splice(Number(btn.dataset.remove),1);renderCombined();renderAdditionList();markDirty()})) }
+function renderAdditionList(){ const box=$('lrAdditions'), items=state.review.additions||[]; if(!items.length){box.innerHTML='<div class="lr-add-empty">추가한 표시가 없습니다.</div>';return} box.innerHTML=items.map((p,i)=>{ const kind=VERTEBRAE.includes(String(p.label||''))?'검수 추체':(p.shape==='endplate'?'종판':(p.landmark?'점':(p.shape||'annotation'))); return `<div class="lr-add-row"><span><strong>${esc(p.label||'표시')}</strong><small>${esc(kind)}</small></span><button type="button" data-remove="${i}"><i class="fas fa-times"></i></button></div>` }).join(''); box.querySelectorAll('[data-remove]').forEach(btn=>btn.addEventListener('click',()=>{state.review.additions.splice(Number(btn.dataset.remove),1);renderCombined();renderAdditionList();markDirty()})) }
 function markDirty(){ if(!state.current)return; state.dirty=true; state.review.done=false; setSavedStatus('저장 안 됨','dirty'); clearTimeout(state.saveTimer); state.saveTimer=setTimeout(()=>saveReview(),900) }
 async function flushPendingSave(){ if(!state.dirty||!state.current)return; clearTimeout(state.saveTimer); state.saveTimer=null; await saveReview() }
 async function saveReview(doneOverride=null){ if(!state.current)return false; clearTimeout(state.saveTimer); state.saveTimer=null; const filename=state.current.name, reviewer=$('lrReviewer').value.trim(); if(doneOverride===true&&!reviewer){$('lrReviewer').focus();setSavedStatus('검토자 이름을 입력하세요','error');return false} const payloadReview={...state.review,type:'label-review-v1',source_filename:filename,target_labeler:state.currentMeta?.labeler_id||$('lrTargetLabeler').value,reviewer,additions:(state.review.additions||[]).map(serializePolygon),memo:$('lrMemo').value,done:doneOverride===null?state.review.done===true:!!doneOverride,updated_at:new Date().toISOString()}; setSavedStatus('저장 중…',''); try{ const r=await fetch('/api/review/'+encodeURIComponent(REVIEW_PREFIX+filename),{method:'PUT',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({review:payloadReview,reviewer})}), j=await r.json(); if(!r.ok||!j?.ok)throw new Error(j?.error||`저장 실패 (${r.status})`); if(state.current?.name===filename){state.review=payloadReview;state.dirty=false} state.reviewCache.set(filename,payloadReview); state.reviewIndex.set(filename,payloadReview); setSavedStatus(payloadReview.done?'검토 완료':'저장됨',payloadReview.done?'done':''); updateProgress(); renderList(); return true }catch(e){setSavedStatus('저장 실패','error');showError(e);return false} }
