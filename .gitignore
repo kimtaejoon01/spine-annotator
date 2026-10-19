@@ -37,3 +37,7 @@ __pycache__/
 *.pt
 *.pth
 *.joblib
+
+# Browser-exported learned weights and parity inputs stay outside Git
+*.onnx
+*_check.npz

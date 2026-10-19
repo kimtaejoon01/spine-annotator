@@ -1,12 +1,17 @@
 {
   "version": 1,
-  "include": ["/*"],
+  "include": [
+    "/*"
+  ],
   "exclude": [
     "/static/*",
     "/ai",
     "/ai/*",
     "/label-review",
     "/label-review/*",
-    "/favicon.ico"
+    "/favicon.ico",
+    "/ai-web",
+    "/ai-web/*",
+    "/ai-models/*"
   ]
 }
