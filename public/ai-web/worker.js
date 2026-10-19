@@ -49,10 +49,10 @@ async function init(){
   ortApi.env.wasm.wasmPaths=ORT_URL;ortApi.env.wasm.numThreads=1;ortApi.env.wasm.proxy=false
   py=await loadPyodide({indexURL:PY_URL})
   await py.loadPackage(['numpy','opencv-python','scipy','scikit-image','pillow','pandas'])
-  for(const [url,path] of [['./original_ops.json','/original_ops.json'],['./pipeline.py','/pipeline.py']]){
+  for(const [url,path] of [['./original_ops.json','/original_ops.json'],['./numerical_checks.py','/numerical_checks.py'],['./pipeline.py','/pipeline.py']]){
     const r=await fetch(url);if(!r.ok)throw Error('실행 파일 다운로드 실패: '+url);py.FS.writeFile(path,await r.text())
   }
-  await py.runPythonAsync("exec(open('/pipeline.py').read())")
+  await py.runPythonAsync("exec(open('/numerical_checks.py').read()); exec(open('/pipeline.py').read())")
 }
 async function load(m){
   ready=false;await init();await release()

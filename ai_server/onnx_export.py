@@ -1,9 +1,16 @@
 """Numerically stable ONNX lowering; original eager predictions stay unchanged."""
 from contextlib import contextmanager
+from pathlib import Path
+from runpy import run_path
 
 import numpy as np
 import torch
 from torch import nn
+
+# The browser loads this exact app-owned source too; model files cannot relax it.
+_checks = run_path(str(Path(__file__).parents[1] / 'public/ai-web/numerical_checks.py'))
+A_PROBABILITY_POLICY = _checks['A_PROBABILITY_POLICY']
+a_probability_stats = _checks['a_probability_stats']
 
 
 class StableGroupNorm(nn.Module):

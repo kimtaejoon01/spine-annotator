@@ -223,6 +223,13 @@ async def check_model(name,path,descriptor):
         out=await infer(name,**inputs);errors={}
         for n in descriptor['outputs']:
             expected=fixture['out_'+n];actual=out[n]
-            np.testing.assert_allclose(actual,expected,rtol=3e-3,atol=3e-4,err_msg=name+'/'+n)
-            errors[n]=float(np.max(np.abs(actual-expected)))
+            if name=='a' and descriptor.get('numerical_policy')==A_PROBABILITY_POLICY:
+                stats=a_probability_stats(actual,expected)
+                if not stats['passed']:raise AssertionError(name+'/'+n+': '+json.dumps(stats))
+                errors[n]=stats
+            else:
+                if not np.isfinite(actual).all() or not np.isfinite(expected).all():
+                    raise AssertionError(name+'/'+n+': nonfinite output')
+                np.testing.assert_allclose(actual,expected,rtol=3e-3,atol=3e-4,err_msg=name+'/'+n)
+                errors[n]=float(np.max(np.abs(actual-expected)))
     return json.dumps(errors)

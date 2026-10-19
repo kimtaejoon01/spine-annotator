@@ -21,6 +21,12 @@ test('manifest rejects unsupported IO, path escape, corrupt dimensions and unval
  }
 })
 test('file identity uses the content SHA256',async()=>assert.equal(await sha256(new TextEncoder().encode('abc')),'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'))
+test('bounded probability policy applies only to A; unknown policies are rejected',()=>{
+ const {m}=bundle();m.models.a.numerical_policy='a-probability-v1';validateManifest(m)
+ m.models.number.numerical_policy='a-probability-v1';assert.throws(()=>validateManifest(m),/검증 기준/)
+ m.models.number.numerical_policy='elementwise-v1';validateManifest(m)
+ m.models.a.numerical_policy='skip';assert.throws(()=>validateManifest(m),/검증 기준/)
+})
 test('browser corners keep duplicate candidate polygons separate for both methods',()=>{
  const candidates=[0,1].map(i=>({candidate_index:i,label:'L5',points:[[10,10+i*40],[40,10+i*40],[40,30+i*40],[10,30+i*40]]}))
  const out=JSON.parse(cornerCompare(JSON.stringify({candidates,validate:true})))

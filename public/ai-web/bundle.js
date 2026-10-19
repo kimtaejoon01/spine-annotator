@@ -9,6 +9,7 @@ export function validateManifest(m){
     const d=m.models?.[name],io=EXPECTED_IO[name]
     if(!d||!leaf(d.file)||!d.file.endsWith('.onnx')||!hash(d.sha256)||!leaf(d.check_file)||!d.check_file.endsWith('.npz')||!hash(d.check_sha256))throw Error(name+': 모델 명세 오류')
     if(JSON.stringify(d.inputs)!==JSON.stringify(io[0])||JSON.stringify(d.outputs)!==JSON.stringify(io[1]))throw Error(name+': 입출력 명세 오류')
+    if(d.numerical_policy!==undefined&&d.numerical_policy!=='elementwise-v1'&&!(name==='a'&&d.numerical_policy==='a-probability-v1'))throw Error(name+': 지원하지 않는 수치 검증 기준')
     for(const [file,bytes] of [[d.file,d.bytes],[d.check_file,d.check_bytes]]){
       if(names.has(file)||!Number.isSafeInteger(bytes)||bytes<1||bytes>600*1024*1024)throw Error(name+': 파일 크기/이름 오류')
       names.add(file);total+=bytes

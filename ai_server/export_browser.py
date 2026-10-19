@@ -6,12 +6,13 @@ from pathlib import Path
 import argparse
 import json
 import time
+import shutil
 import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
 from .runtime import SpineEngine, S1Engine, FemoralEngine, read_json, file_sha, to_jsonable
-from .onnx_export import parity_stats, stable_group_norm_export
+from .onnx_export import parity_stats, stable_group_norm_export, a_probability_stats, A_PROBABILITY_POLICY
 
 STAGES = ('a', 'number', 's1_coarse', 's1_fine', 'fh_coarse', 'fh_fine')
 
@@ -57,7 +58,7 @@ class FHExport(nn.Module):
         if self.fine:return out[0].sigmoid(),out[1].softmax(1)
         return out.sigmoid()
 
-def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None,extra_inputs=()):
+def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None,extra_inputs=(),reuse_onnx=None):
     import onnx
     import onnxruntime as ort
     model.cpu().eval();path=folder/(name+'.onnx')
@@ -70,15 +71,20 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
         cases.append((values,tuple(t.detach().cpu().numpy().copy() for t in expected)))
     strategies=['default']
     if any(isinstance(m,nn.GroupNorm) for m in model.modules()):strategies.append('stable_group_norm')
+    if reuse_onnx is not None:
+        if name!='a':raise ValueError('기존 ONNX 재사용은 A에만 지원합니다.')
+        shutil.copyfile(Path(reuse_onnx),path)
+        strategies=['reused_onnx_revalidated']
     attempts=[]
     for strategy in strategies:
         # Legacy export retains dynamic RoiAlign/GRU. The retry emits only
         # standard ONNX arithmetic, preserving the existing browser contract.
-        with stable_group_norm_export(model,strategy=='stable_group_norm') as export_model:
-            with torch.inference_mode():
-                torch.onnx.export(export_model,args,str(path),opset_version=17,dynamo=False,
-                                  input_names=input_names,output_names=output_names,
-                                  dynamic_axes=dynamic_axes,do_constant_folding=True)
+        if reuse_onnx is None:
+            with stable_group_norm_export(model,strategy=='stable_group_norm') as export_model:
+                with torch.inference_mode():
+                    torch.onnx.export(export_model,args,str(path),opset_version=17,dynamo=False,
+                                      input_names=input_names,output_names=output_names,
+                                      dynamic_axes=dynamic_axes,do_constant_folding=True)
         onnx.checker.check_model(str(path),full_check=True)
         graph=onnx.load(str(path),load_external_data=False)
         if any(x.data_location==onnx.TensorProto.EXTERNAL for x in graph.graph.initializer):
@@ -90,6 +96,10 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
             actual=session.run(output_names,dict(zip(input_names,[x.detach().cpu().numpy() for x in values])))
             reports=[dict(output=n,**parity_stats(a,b,threshold=.5 if name=='a' and n=='probabilities' else None))
                      for n,a,b in zip(output_names,actual,expected)]
+            if name=='a':
+                for r,a,b in zip(reports,actual,expected):
+                    bounded=a_probability_stats(a,b)
+                    r.update(elementwise_passed=r['passed'],passed=bounded['passed'],probability_check=bounded)
             passed=passed and all(r['passed'] for r in reports)
             comparisons.append(dict(shapes=[list(v.shape) for v in values],
                                      max_absolute_errors=[r.get('max_absolute_error') for r in reports],outputs=reports))
@@ -97,10 +107,11 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
         attempts.append(dict(strategy=strategy,passed=passed,comparisons=comparisons))
         if passed:
             print(name+' 수치 비교 통과 ('+strategy+')',flush=True)
+            if name=='a':print('A 확률지도 검증: '+json.dumps(reports,ensure_ascii=False),flush=True)
             break
         print(name+' 수치 비교: '+json.dumps(comparisons,ensure_ascii=False),flush=True)
         if strategy!=strategies[-1]:
-            print(name+': GroupNorm의 평균 계산을 나누어 다시 변환합니다. 허용 오차는 그대로 유지합니다.',flush=True)
+            print(name+': GroupNorm의 평균 계산을 나누어 다시 변환합니다. 검증 기준은 동일합니다.',flush=True)
     else:
         report=folder/(name+'_export_diagnostics.json')
         report.write_text(json.dumps(dict(model=name,torch_version=torch.__version__,onnx_version=onnx.__version__,
@@ -114,9 +125,12 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
     return dict(file=path.name,sha256=file_sha(path),bytes=path.stat().st_size,
                 inputs=input_names,outputs=output_names,check_file=fixture.name,
                 check_sha256=file_sha(fixture),check_bytes=fixture.stat().st_size,parity=comparisons,
-                export_strategy=strategy,export_attempts=attempts)
+                export_strategy=strategy,export_attempts=attempts,
+                numerical_policy=A_PROBABILITY_POLICY if name=='a' else 'elementwise-v1')
 
-def export_bundle(number,a,s1,fh,output):
+def export_bundle(number,a,s1,fh,output,reuse_a_onnx=None):
+    if reuse_a_onnx is not None and not Path(reuse_a_onnx).is_file():
+        raise FileNotFoundError('재사용할 A ONNX 파일이 없습니다: '+str(reuse_a_onnx))
     output=Path(output).expanduser()
     if output.exists():raise FileExistsError('출력 폴더가 이미 있습니다. 새 폴더를 지정하세요: '+str(output))
     output.mkdir(parents=True)
@@ -136,7 +150,7 @@ def export_bundle(number,a,s1,fh,output):
     ns=spine.seg;scales=ns['TTA_SCALES'] if ns['TTA_USE_TEST'] else [1.]
     x=image(1,3+ns['y_encoding_channel_count'](),ns['MODEL_HEIGHT'],ns['MODEL_WIDTH'])
     print('A → ONNX / 수치 비교',flush=True)
-    manifest['models']['a']=write('a',AExport(spine.seg_model,scales),(x,),['image'],['probabilities'])
+    manifest['models']['a']=write('a',AExport(spine.seg_model,scales),(x,),['image'],['probabilities'],reuse_onnx=reuse_a_onnx)
     del x
     x=image(1,3,nc['input_h'],nc['input_w']);gdim=len(nc['feature_names'])
     def number_inputs(n):
@@ -184,4 +198,5 @@ def export_bundle(number,a,s1,fh,output):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('number','a','s1','fh','output'):p.add_argument('--'+name,required=True)
+    p.add_argument('--reuse-a-onnx',default=None)
     export_bundle(**vars(p.parse_args()))
