@@ -11,6 +11,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from .runtime import SpineEngine, S1Engine, FemoralEngine, read_json, file_sha, to_jsonable
+from .onnx_export import parity_stats, stable_group_norm_export
 
 STAGES = ('a', 'number', 's1_coarse', 's1_fine', 'fh_coarse', 'fh_fine')
 
@@ -60,38 +61,60 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
     import onnx
     import onnxruntime as ort
     model.cpu().eval();path=folder/(name+'.onnx')
-    # Legacy export is deliberate: dynamic RoiAlign + GRU are stable in this path.
-    # Never allow fallback to a PyTorch-only/custom operator.
-    with torch.inference_mode():
-        torch.onnx.export(model,args,str(path),opset_version=17,dynamo=False,
-                          input_names=input_names,output_names=output_names,
-                          dynamic_axes=dynamic_axes,do_constant_folding=True)
-    onnx.checker.check_model(str(path),full_check=True)
-    graph=onnx.load(str(path),load_external_data=False)
-    if any(x.data_location==onnx.TensorProto.EXTERNAL for x in graph.graph.initializer):
-        raise RuntimeError('External ONNX data is not supported in this bundle.')
-    del graph
-    session=ort.InferenceSession(str(path),providers=['CPUExecutionProvider'])
-    comparisons=[]
+    # Capture native PyTorch outputs before any export-only rewrite.
+    cases=[]
     for values in (args,*extra_inputs):
         with torch.inference_mode(): expected=model(*values)
         if not isinstance(expected,tuple):expected=(expected,)
-        actual=session.run(None,dict(zip(input_names,[x.detach().cpu().numpy() for x in values])))
-        errors=[]
-        for a,b in zip(actual,expected):
-            b=b.detach().cpu().numpy()
-            np.testing.assert_allclose(a,b,rtol=2e-3,atol=2e-4,err_msg=name)
-            errors.append(float(np.max(np.abs(a-b))))
-        comparisons.append(dict(shapes=[list(v.shape) for v in values],max_absolute_errors=errors))
+        if len(expected)!=len(output_names):raise ValueError(name+': 출력 개수 불일치')
+        cases.append((values,tuple(t.detach().cpu().numpy().copy() for t in expected)))
+    strategies=['default']
+    if any(isinstance(m,nn.GroupNorm) for m in model.modules()):strategies.append('stable_group_norm')
+    attempts=[]
+    for strategy in strategies:
+        # Legacy export retains dynamic RoiAlign/GRU. The retry emits only
+        # standard ONNX arithmetic, preserving the existing browser contract.
+        with stable_group_norm_export(model,strategy=='stable_group_norm') as export_model:
+            with torch.inference_mode():
+                torch.onnx.export(export_model,args,str(path),opset_version=17,dynamo=False,
+                                  input_names=input_names,output_names=output_names,
+                                  dynamic_axes=dynamic_axes,do_constant_folding=True)
+        onnx.checker.check_model(str(path),full_check=True)
+        graph=onnx.load(str(path),load_external_data=False)
+        if any(x.data_location==onnx.TensorProto.EXTERNAL for x in graph.graph.initializer):
+            raise RuntimeError('External ONNX data is not supported in this bundle.')
+        del graph
+        session=ort.InferenceSession(str(path),providers=['CPUExecutionProvider'])
+        comparisons=[];passed=True
+        for values,expected in cases:
+            actual=session.run(output_names,dict(zip(input_names,[x.detach().cpu().numpy() for x in values])))
+            reports=[dict(output=n,**parity_stats(a,b,threshold=.5 if name=='a' and n=='probabilities' else None))
+                     for n,a,b in zip(output_names,actual,expected)]
+            passed=passed and all(r['passed'] for r in reports)
+            comparisons.append(dict(shapes=[list(v.shape) for v in values],
+                                     max_absolute_errors=[r.get('max_absolute_error') for r in reports],outputs=reports))
+        del session
+        attempts.append(dict(strategy=strategy,passed=passed,comparisons=comparisons))
+        if passed:
+            print(name+' 수치 비교 통과 ('+strategy+')',flush=True)
+            break
+        print(name+' 수치 비교: '+json.dumps(comparisons,ensure_ascii=False),flush=True)
+        if strategy!=strategies[-1]:
+            print(name+': GroupNorm의 평균 계산을 나누어 다시 변환합니다. 허용 오차는 그대로 유지합니다.',flush=True)
+    else:
+        report=folder/(name+'_export_diagnostics.json')
+        report.write_text(json.dumps(dict(model=name,torch_version=torch.__version__,onnx_version=onnx.__version__,
+                                         onnxruntime_version=ort.__version__,attempts=attempts),ensure_ascii=False,indent=2),encoding='utf-8')
+        raise AssertionError(name+' ONNX 수치 비교 실패. 허용 오차를 넘겨 중단했습니다. 진단 파일: '+str(report))
     # Small per-stage smoke fixture for browser WASM/WebGPU numerical verification.
     fixture=folder/(name+'_check.npz')
-    with torch.inference_mode(): reference=model(*args)
-    if not isinstance(reference,tuple):reference=(reference,)
+    reference=cases[0][1]
     np.savez_compressed(fixture,**{'in_'+n:x.cpu().numpy() for n,x in zip(input_names,args)},
-                        **{'out_'+n:x.cpu().numpy() for n,x in zip(output_names,reference)})
+                        **{'out_'+n:x for n,x in zip(output_names,reference)})
     return dict(file=path.name,sha256=file_sha(path),bytes=path.stat().st_size,
                 inputs=input_names,outputs=output_names,check_file=fixture.name,
-                check_sha256=file_sha(fixture),check_bytes=fixture.stat().st_size,parity=comparisons)
+                check_sha256=file_sha(fixture),check_bytes=fixture.stat().st_size,parity=comparisons,
+                export_strategy=strategy,export_attempts=attempts)
 
 def export_bundle(number,a,s1,fh,output):
     output=Path(output).expanduser()
