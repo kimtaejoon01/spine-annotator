@@ -41,3 +41,6 @@ __pycache__/
 # Browser-exported learned weights and parity inputs stay outside Git
 *.onnx
 *_check.npz
+
+# Per-user Drive locations
+spine_browser_model_paths.json

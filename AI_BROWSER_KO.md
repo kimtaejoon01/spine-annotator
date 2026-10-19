@@ -16,6 +16,20 @@ GPU 사용 가능 여부를 확인하고, 연산 미지원/수치 검증 실패 
 
 기존 `.pt/.pth`는 그대로 브라우저에서 실행하지 못합니다. 모델 소유자가 Colab 또는 학습 컴퓨터에서 한 번 ONNX로 변환해야 합니다. 페이지의 **모델 준비 안내**에 [Colab 변환 노트북](public/ai-web/export_browser.ipynb)이 있습니다.
 
+개인 모델 경로는 `spine_browser_model_paths.json`에 보관합니다. 이 설정 파일을 변환 노트북에서 처음 한 번 선택하면 Drive 최상위 폴더에 저장하고 다음 실행부터 재사용합니다. 네 모델 경로 키는 `NUMBER_RUN`, `A_RUN`, `S1_BUNDLE`, `FH_RUN`입니다. 학습 가중치 자체를 ChatGPT에 다시 첨부할 필요 없이 Drive를 연결한 Colab에서 변환합니다. 설정 파일은 공개 GitHub에 올리지 않습니다.
+
+GitHub에서 코드를 받을 때는 `codex/integrated-ai-app` 브랜치를 사용합니다:
+
+```bash
+git fetch origin
+git switch codex/integrated-ai-app
+git pull --ff-only origin codex/integrated-ai-app
+npm ci
+npm run build
+```
+
+이후 기존 웹앱 배포 절차로 `dist`를 배포하면 같은 사이트의 `/ai-web/` 페이지가 제공됩니다. 기본 브랜치에서 `git pull`만 하는 경우에는 이 작업 브랜치의 변경이 포함되지 않습니다. 모델은 Colab에서 변환한 폴더를 해당 페이지에서 선택합니다.
+
 CLI로 변환할 경우:
 
 ```bash
