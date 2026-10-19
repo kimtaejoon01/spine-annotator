@@ -14,7 +14,7 @@
 <div class="controls"><label>꼭지점 <select id="method"><option value="v2">Annotator v2</option><option value="v1">Annotator v1</option></select></label><div id="layers"></div></div>
 <div class="viewers"><div class="viewer"><div class="viewer-title">원본</div><canvas id="original" aria-label="원본 X-ray"></canvas></div><div class="viewer"><div class="viewer-title">AI 결과 <span id="decoder"></span></div><canvas id="overlay" aria-label="AI 오버레이"></canvas></div></div>
 <div id="empty" class="empty"><span>분석할 X-ray를 올려 주세요</span><small>원본과 같은 좌표에 결과를 표시합니다.</small></div>
-<div id="summary" class="summary"></div><div id="review" class="review" hidden></div>
+<div id="summary" class="summary"></div><section id="timings" class="timings" aria-label="단계별 소요 시간" hidden></section><div id="review" class="review" hidden></div>
 <details><summary>번호 · 모델 점수</summary><div id="table" class="table-wrap"></div></details>
 <p class="footnote">색은 구조를 구분합니다. 정답/오답 표시가 아닙니다. FH1/FH2는 모델 출력 순서이며 해부학적 좌/우 구분이 아닙니다.</p>
 </section></main>

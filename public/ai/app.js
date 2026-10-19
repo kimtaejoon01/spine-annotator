@@ -1,3 +1,4 @@
+import {renderTimings} from './timing-view.js'
 import {bindViewerControls} from './viewer-controls.js'
 import {validateResult,toAnnotations} from './result.js'
 const $=id=>document.getElementById(id),API=new URL('../api/',import.meta.url)
@@ -77,7 +78,7 @@ async function setFile(file,bridge=null){
   if(!file)return
   if(file.size>32*1024*1024){message('32 MB 이하의 영상을 올려 주세요.');return}
   s.file=file;s.result=null;s.job=null;s.request=bridge;s.image=null;s.zoom=1;s.panX=0;s.panY=0
-  $('filename').textContent=file.name;$('review').hidden=true;$('summary').replaceChildren();$('table').replaceChildren();$('decoder').textContent=''
+  $('filename').textContent=file.name;$('review').hidden=true;$('summary').replaceChildren();renderTimings($('timings'),null);$('table').replaceChildren();$('decoder').textContent=''
   $('apply').hidden=!bridge;$('empty').hidden=false;updateButtons()
   try{s.image=await loadBrowserImage(file);$('empty').hidden=true;draw()}catch{draw()}
   if(s.ready)analyze();else{message('영상이 준비되었습니다. 모델을 불러오면 자동 분석합니다.');showSetup()}
@@ -87,7 +88,7 @@ for(const type of ['dragover','drop'])$('drop').addEventListener(type,e=>{e.prev
 $('drop').ondragleave=()=>$('drop').classList.remove('drag')
 async function analyze(){
   if(s.busy||!s.ready||!s.file)return
-  busy(true);s.result=null;s.job=null;$('review').hidden=true;$('summary').replaceChildren();$('table').replaceChildren();$('decoder').textContent='';draw()
+  busy(true);s.result=null;s.job=null;$('review').hidden=true;$('summary').replaceChildren();renderTimings($('timings'),null);$('table').replaceChildren();$('decoder').textContent='';draw()
   try{
     const form=new FormData();form.append('image',s.file,s.file.name);form.append('anterior_right',String($('anterior').value==='right'))
     const j=await request('predict',{method:'POST',body:form});s.job=j.id;const done=await poll(j.id)
@@ -98,7 +99,7 @@ async function analyze(){
   finally{busy(false)}
 }
 $('run').onclick=analyze
-$('anterior').onchange=()=>{if(s.result){s.result=null;updateButtons();draw();message('전방 방향이 바뀌었습니다. 전체 분석을 다시 실행해 주세요.')}}
+$('anterior').onchange=()=>{if(s.result){s.result=null;renderTimings($('timings'),null);updateButtons();draw();message('전방 방향이 바뀌었습니다. 전체 분석을 다시 실행해 주세요.')}}
 $('method').onchange=()=>{draw();if(s.result)renderTable()}
 $('l5').onchange=updateButtons
 $('s1').onclick=async()=>{
@@ -116,8 +117,9 @@ function renderTable(){
 function renderResult(){
   const r=s.result,sp=r.spine,fh=r.femoral||{},s1=r.s1||{}
   $('decoder').textContent=sp.decoder==='raw'?'raw · 보정 미적용':'Viterbi'
-  const summary=[['척추 후보',sp.polygons.length],['S1',s1.status==='predicted'?'검출':'확인 필요'],['골두',(fh.instances||[]).length],['HC',fh.HC_LAT?'표시':'보류'],['분석 시간',r.timings.total_seconds.toFixed(1)+'초']]
+  const summary=[['척추 후보',sp.polygons.length],['S1',s1.status==='predicted'?'검출':'확인 필요'],['골두',(fh.instances||[]).length],['HC',fh.HC_LAT?'표시':'보류']]
   $('summary').replaceChildren(...summary.map(([title,value])=>{const el=document.createElement('div'),small=document.createElement('span'),b=document.createElement('b');small.textContent=title;b.textContent=value;el.append(small,b);return el}))
+  renderTimings($('timings'),r.timings)
   const notes=[...(r.review_reasons||[]),...(r.errors||[]).map(x=>x.stage+': '+x.message),...(fh.review_reasons||[]).map(x=>'골두: '+x)]
   if(s1.reason)notes.push(s1.reason+' L5 후보를 선택해 S1을 재계산할 수 있습니다.')
   if(s1.in_bounds===false)notes.push('S1 끝점이 영상 경계를 벗어났습니다.')
