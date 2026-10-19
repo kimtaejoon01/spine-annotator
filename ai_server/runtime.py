@@ -190,12 +190,16 @@ class CornerEngine:
 
 class S1Engine:
     def __init__(self,bundle,device):
-        folder=normalize_path(bundle)
-        if (folder/'final_bundle'/'bundle.json').is_file():folder=folder/'final_bundle'
+        from .s1_pair import PairSelectionPredictor, resolve_s1_folder
+        folder=resolve_s1_folder(normalize_path(bundle))
         ns={};exec(S1_SOURCE,ns)
-        self.predictor=ns['S1Predictor'](folder,device=str(device))
-        self.identity=dict(bundle=str(folder),bundle_sha256=file_sha(folder/'bundle.json'),
-            weights_sha256=file_sha(folder/'weights.pt'),settings=read_json(folder/'bundle.json'))
+        if (folder/'selection.json').is_file():
+            self.predictor=PairSelectionPredictor(folder,ns['CORE'],device)
+            self.identity=self.predictor.identity
+        else:
+            self.predictor=ns['S1Predictor'](folder,device=str(device))
+            self.identity=dict(bundle=str(folder),bundle_sha256=file_sha(folder/'bundle.json'),
+                weights_sha256=file_sha(folder/'weights.pt'),settings=read_json(folder/'bundle.json'))
     def predict(self,path,l5):
         with torch.inference_mode():return self.predictor.predict(str(path),np.asarray(l5,float).reshape(-1,2))
 

@@ -39,10 +39,12 @@ python -m ai_server.export_browser --number NUMBER_RUN --a A_RUN --s1 S1_BUNDLE 
 
 - 번호: `shared_mobilenet_roi_best.pt`, `shared_mobilenet_roi_config.json`, `geometry_scaler.joblib`
 - A: 실제 `A_*` 실행 폴더의 `config.json`, `checkpoints/*_best.pth`
-- S1: `final_bundle/bundle.json`, `weights.pt`, `prior.json` 등 원본 bundle 전체
+- S1: `final_bundle` 또는 `S1_L5_pair_selection`의 `pair_selection_...` 결과 폴더. 후자는 같은 run 안의 `coarse/best.pt`, `fine_global_*/best.pt`, `fine_l5_*/best.pt`와 manifest, 학습 스냅샷, 결과 폴더의 `train_prior.json`·`selection.json`을 그대로 둡니다. 가중치 의존성 해시를 확인하고 저장된 선택 강도를 사용하며 재학습·검증 강도 재선택은 하지 않습니다.
 - 대퇴골두: `coarse_best.pt`, `fine_best.pt`, `config.json`, `selected_threshold.json`
 
 학습 결과는 읽기만 하며 새 출력 폴더가 이미 있으면 변환을 중단합니다. 재학습하지 않습니다. A의 EMA 선택·TTA, 모델별 전처리, 파편 제거/watershed, S1 prior, 골두 원 피팅/HC 보류 정책을 유지합니다. 번호 후보가 23개를 넘으면 전체 후보에 raw 번호를 표시합니다. 원본 GT 없이 정확도나 정답/오답 색은 표시하지 않습니다.
+
+`S1_L5_pair_selection` 결과를 쓰려면 개인 설정 JSON의 `S1_BUNDLE`에 정확한 `pair_selection_...` 폴더를 지정합니다. 여러 결과가 있으면 최신 폴더를 임의로 고르지 않습니다. 저장된 후처리 강도는 0을 포함해 그대로 유지합니다. 새 S1 모델도 기존 브라우저와 동일한 `s1_coarse.onnx`, `s1_fine.onnx`로 변환되므로 변환 결과 폴더 전체를 다시 선택하면 됩니다. 이미 Colab을 열었다면 소스 다운로드 셀부터 다시 실행하여 새 로더를 가져오세요.
 
 변환기는 6개 ONNX 그래프와 설정, 출력 검증용 NPZ를 만듭니다. 번호 모델은 가변 후보 1/8/23/26개를 비교합니다. 모든 그래프의 PyTorch ↔ ONNX CPU 값이 허용 오차 안에 들어갈 때만 manifest를 생성합니다. 브라우저도 각 단계 출력값을 다시 비교하고 불일치하면 준비 완료로 표시하지 않습니다. 이 검사는 임상 성능을 보장하지 않습니다.
 
