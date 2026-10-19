@@ -1,5 +1,12 @@
 # Spine Annotator - 척추 X-ray 폴리곤 라벨링 앱
 
+## 통합 AI 앱
+
+X-ray 업로드로 척추 분할·번호·v1/v2 꼭지점·S1 종판·대퇴골두까지 실행하는 앱을 추가했습니다.
+Windows는 `start_ai.bat`, macOS/Linux는 `bash start_ai.command`로 실행합니다.
+기존 Annotator 상단의 **AI 자동 분석**에서도 현재 영상을 분석하고 편집 라벨로 적용할 수 있습니다.
+모델 경로 설정 및 사용법: [AI_APP_KO.md](AI_APP_KO.md).
+
 ## 프로젝트 개요
 - **Name**: Spine Annotator
 - **Goal**: Whole spine X-ray 이미지에 척추체(vertebral body)를 폴리곤으로 라벨링하는 웹앱.

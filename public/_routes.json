@@ -3,6 +3,8 @@
   "include": ["/*"],
   "exclude": [
     "/static/*",
+    "/ai",
+    "/ai/*",
     "/label-review",
     "/label-review/*",
     "/favicon.ico"

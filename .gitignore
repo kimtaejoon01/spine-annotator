@@ -31,3 +31,9 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+.venv-ai/
+__pycache__/
+*.pyc
+*.pt
+*.pth
+*.joblib
