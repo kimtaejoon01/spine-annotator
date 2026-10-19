@@ -10,7 +10,7 @@
 <ol class="steps"><li>척추 분할 + watershed</li><li>번호 + 4개 꼭지점</li><li>L5 기반 S1 종판</li><li>대퇴골두 + 중심</li></ol>
 <details id="l5Panel"><summary>L5 확인 · S1 재계산</summary><p class="muted">L5가 없거나 중복되면 후보를 지정하세요. 선택해도 척추 번호 자체는 바뀌지 않습니다.</p><select id="l5"><option value="">분석 후 선택 가능</option></select><button id="s1" class="secondary" disabled>S1만 다시 계산</button></details>
 <div class="actions"><button id="apply" class="primary" hidden disabled>Annotator 편집 라벨로 적용</button><button id="download" class="secondary" disabled>결과 ZIP 다운로드</button><button id="json" class="ghost" disabled>좌표 JSON 다운로드</button></div>
-</aside><section class="workspace"><div class="workspace-head"><div><h2>분석 결과</h2><span class="muted">드래그하여 이동 · 휠로 확대</span></div><button id="fit" class="ghost">화면 맞춤</button></div>
+</aside><section class="workspace"><div class="workspace-head"><div><h2>분석 결과</h2><span class="muted">휠로 확대·축소 · 드래그로 이동</span></div><button id="fit" class="ghost">화면 맞춤</button></div>
 <div class="controls"><label>꼭지점 <select id="method"><option value="v2">Annotator v2</option><option value="v1">Annotator v1</option></select></label><div id="layers"></div></div>
 <div class="viewers"><div class="viewer"><div class="viewer-title">원본</div><canvas id="original" aria-label="원본 X-ray"></canvas></div><div class="viewer"><div class="viewer-title">AI 결과 <span id="decoder"></span></div><canvas id="overlay" aria-label="AI 오버레이"></canvas></div></div>
 <div id="empty" class="empty"><span>분석할 X-ray를 올려 주세요</span><small>원본과 같은 좌표에 결과를 표시합니다.</small></div>

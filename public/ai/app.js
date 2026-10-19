@@ -1,3 +1,4 @@
+import {bindViewerControls} from './viewer-controls.js'
 import {validateResult,toAnnotations} from './result.js'
 const $=id=>document.getElementById(id),API=new URL('../api/',import.meta.url)
 const s={ready:false,busy:false,file:null,image:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
@@ -152,13 +153,7 @@ function paint(canvas,overlay){
   if(layers.fh_circle)for(const x of r.femoral?.instances||[]){const color=x.slot?'#ff9d61':'#ff77b7';c.beginPath();c.arc(x.cx,x.cy,x.radius,0,Math.PI*2);c.strokeStyle=color;c.stroke();point([x.cx,x.cy],color);tag([x.cx+x.radius,x.cy],`FH${x.slot+1}`,color)}
   if(layers.hc&&r.femoral?.HC_LAT){const p=r.femoral.HC_LAT;point([p.x,p.y],'white');tag([p.x+7/scale,p.y+14/scale],'HC','white')}
 }
-for(const canvas of [$('original'),$('overlay')]){
-  let drag=null
-  canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId)}
-  canvas.onpointermove=e=>{if(!drag)return;s.panX+=e.clientX-drag[0];s.panY+=e.clientY-drag[1];drag=[e.clientX,e.clientY];draw()}
-  canvas.onpointerup=canvas.onpointercancel=()=>{drag=null}
-  canvas.addEventListener('wheel',e=>{e.preventDefault();s.zoom=Math.max(.4,Math.min(12,s.zoom*Math.exp(-e.deltaY*.002)));draw()},{passive:false})
-}
+bindViewerControls(document.querySelector('.viewers'),[$('original'),$('overlay')],s,draw)
 $('fit').onclick=()=>{s.zoom=1;s.panX=s.panY=0;draw()};new ResizeObserver(draw).observe($('original'))
 
 // Dedicated analysis window bridge: exact opener origin + source + per-request ID.
