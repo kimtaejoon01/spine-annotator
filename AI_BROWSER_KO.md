@@ -96,7 +96,9 @@ A 확률지도는 `a-probability-v1` 기준을 사용합니다. 동일 shape, �
 - 두 골두가 겹쳐도 count head가 2이고 나머지 조건이 맞으면 HC를 계산합니다.
 - A / 번호 / S1 알고리즘은 바뀌지 않습니다. flip TTA는 골두 추론 횟수를 늘립니다.
 
-[골두만 교체하는 Colab 노트북](public/ai-web/update_femoral.ipynb)을 실행하고, 기존 브라우저 변환 폴더와 새 FH v3 `run_...` 폴더 두 개를 지정하세요. 기존 A/번호/S1의 ONNX 및 검증 NPZ 해시를 확인한 뒤 그대로 복사하며 FH 두 그래프만 변환합니다. 새 결과 폴더를 생성하므로 기존 결과를 덮어쓰지 않습니다. 웹앱의 모델 설정에서 새 폴더 전체를 선택하고 **FH v3** 표시를 확인하세요.
+[기존 변환 파일 없이 전체 모델 만드는 Colab 노트북](public/ai-web/update_femoral.ipynb)을 실행하세요. 이전 학습에 사용한 Google Drive를 연결하면 `spine_browser_model_paths.json`에서 원본 학습 경로를 읽고 A/번호/S1/FH v3를 새로 변환합니다. 현재 PC의 기존 모델이나 이전 manifest는 필요하지 않습니다. 저장된 FH 경로가 v2라면 형제 `FH_LAT_v3` 폴더에서 가장 최근의 완료된 `run_YYYYMMDD_HHMMSS`를 선택하고 경로를 출력합니다. 명시적인 `FH_V3_RUN`이 있으면 이를 우선합니다. 불완전한 run은 제외하며, 날짜가 모호한 여러 run은 임의로 고르지 않습니다. 새 결과 폴더를 만들고 ZIP을 내려받습니다. 학습 결과를 덮어쓰거나 재학습하지 않습니다. A도 새로 변환하므로 시간이 걸립니다.
+
+기존 변환 묶음이 있는 경우에는 Python의 `replace_femoral_bundle(existing_bundle, fh, output)`로 FH만 교체할 수도 있습니다. 이 함수는 기존 A/번호/S1의 ONNX와 검증 NPZ 해시를 확인한 뒤 그대로 복사합니다.
 
 ## GT 표시
 
