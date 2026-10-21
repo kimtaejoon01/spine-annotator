@@ -31,3 +31,16 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+.venv-ai/
+__pycache__/
+*.pyc
+*.pt
+*.pth
+*.joblib
+
+# Browser-exported learned weights and parity inputs stay outside Git
+*.onnx
+*_check.npz
+
+# Per-user Drive locations
+spine_browser_model_paths.json

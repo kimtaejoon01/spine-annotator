@@ -1930,20 +1930,36 @@ export class SpineAnnotator {
   }
 
   snapshot() {
-    return JSON.stringify(this.polygons.map(p => ({
+    return JSON.stringify({ polygons: this.polygons.map(p => ({
       id: p.id,
       label: p.label,
       points: p.points.slice(),
       manualLabel: p.manualLabel === true,
       landmark: p.landmark === true,
-    })))
+      ...(p.shape ? { shape: p.shape } : {}),
+    })), landmarks: this.getLandmarks?.() || [] })
   }
 
   restore(snapshot) {
-    this.polygons = JSON.parse(snapshot)
+    const saved = JSON.parse(snapshot)
+    this.polygons = Array.isArray(saved) ? saved : saved.polygons
+    if (!Array.isArray(saved)) this.loadLandmarks?.(saved.landmarks || [])
     this.selectedId = null
     this.renderPolygons()
     this.notifyPolygons()
+  }
+
+  applyAiPrediction(polygons, landmarks) {
+    // One undo step restores both previous polygons (including circle/endplate shape)
+    // and landmarks. loadPolygons normally resets history for a new image.
+    const history = this.history.slice(0, this.historyIdx + 1)
+    const before = this.snapshot()
+    if (history[history.length - 1] !== before) history.push(before)
+    this.loadLandmarks?.(landmarks)
+    this.loadPolygons(polygons)
+    this.history = history
+    this.historyIdx = history.length - 1
+    this.pushHistory()
   }
 
   undo() {
