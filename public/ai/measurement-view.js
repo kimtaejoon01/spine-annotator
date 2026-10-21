@@ -9,16 +9,15 @@ export function paintMeasurement(c,m,{scale,width,height}){
   m.lines.forEach((l,i)=>{
     const color=palette[i%palette.length],u=unit(sub(l.points[1],l.points[0]))
     if(m.angular?.extend&&u){const span=Math.hypot(width,height)*4;line([add(l.points[0],mul(u,-span)),add(l.points[0],mul(u,span))],color,[6,5])}
-    line(l.points,color,l.reference?[6,5]:[]);tag(l.points[0],l.label,color)
+    line(l.points,color,l.reference?[6,5]:[])
     c.setLineDash([]);for(const p of l.points){c.beginPath();c.arc(...p,3/scale,0,Math.PI*2);c.fillStyle=color;c.fill()}
   })
-  for(const p of m.markers)tag(p.point,p.label,'#ffffff')
   const g=m.angular,p=g?.vertex
   if(p&&p[0]>=0&&p[0]<=width&&p[1]>=0&&p[1]<=height){
     const {start,delta}=sweep(g.u,g.v),r=32/scale
     // Rays at the actual intersection identify the same directed angle as the table.
     for(const v of [g.u,g.v])line([p,add(p,mul(unit(v),r*1.5))],'#ffffff',[3,3])
-    c.setLineDash([]);c.beginPath();c.arc(...p,r,start,start+delta,delta<0);c.strokeStyle='#ffffff';c.stroke();tag(add(p,[r,r]),m.id+' '+measurementText(m),'#ffffff')
+    c.setLineDash([]);c.beginPath();c.arc(...p,r,start,start+delta,delta<0);c.strokeStyle='#ffffff';c.stroke();tag(add(p,[r,r]),measurementText(m),'#ffffff')
   }else if(m.id==='SVA')tag(m.lines.at(-1).points[0],measurementText(m),'#ffffff')
   c.restore()
 }

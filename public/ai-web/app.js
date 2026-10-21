@@ -234,11 +234,11 @@ function paint(canvas,mode){
   const tag=(p,text,color)=>{const width=c.measureText(text).width;c.fillStyle='#0b1421db';c.fillRect(p[0]-2/scale,p[1]-fs,width+4/scale,fs+4/scale);c.fillStyle=color;c.fillText(text,...p)}
   if(layers.fh_mask)for(const x of r.femoral?.segmentation_contours||[])line(x.points,x.slot?'#ff9d61':'#ff77b7',true,true)
   const byId=new Map(r.spine.numbering.map(x=>[x.input_index,x]))
-  r.spine.polygons.forEach((p,i)=>{if(layers.spine)line(p.points,colors.spine,true);if(layers.number){const x=Math.max(...p.points.map(x=>x[0])),y=p.points.reduce((sum,p)=>sum+p[1],0)/p.points.length;tag([x+4/scale,y],`${i+1}: ${byId.get(i).final_level}`,colors.spine)}})
+  r.spine.polygons.forEach((p,i)=>{if(layers.spine)line(p.points,colors.spine,true);if(layers.number){const x=Math.max(...p.points.map(x=>x[0])),y=p.points.reduce((sum,p)=>sum+p[1],0)/p.points.length;tag([x+4/scale,y],byId.get(i).final_level,colors.spine)}})
   if(layers.corners)for(const row of r.spine.corners||[]){const x=row[$('method').value]||{},color=$('method').value==='v1'?'#64b5ff':colors.corners;for(const [a,b] of [['SA','SP'],['IA','IP']])if(x[a]&&x[b])line([x[a],x[b]],color);for(const k of ['SA','SP','IA','IP'])point(x[k],color)}
-  if(layers.s1&&r.s1?.points){line(r.s1.points,colors.s1);r.s1.points.forEach(p=>point(p,colors.s1));tag(r.s1.points[0],'S1',colors.s1)}
-  if(layers.fh_circle)for(const x of r.femoral?.instances||[]){const color=x.slot?'#ff9d61':'#ff77b7';c.beginPath();c.arc(x.cx,x.cy,x.radius,0,Math.PI*2);c.strokeStyle=color;c.stroke();point([x.cx,x.cy],color);tag([x.cx+x.radius,x.cy],`FH${x.slot+1}`,color)}
-  if(layers.hc&&r.femoral?.HC_LAT){const p=r.femoral.HC_LAT;point([p.x,p.y],'white');tag([p.x+7/scale,p.y+14/scale],'HC','white')}
+  if(layers.s1&&r.s1?.points){line(r.s1.points,colors.s1);r.s1.points.forEach(p=>point(p,colors.s1))}
+  if(layers.fh_circle)for(const x of r.femoral?.instances||[]){const color=x.slot?'#ff9d61':'#ff77b7';c.beginPath();c.arc(x.cx,x.cy,x.radius,0,Math.PI*2);c.strokeStyle=color;c.stroke();point([x.cx,x.cy],color)}
+  if(layers.hc&&r.femoral?.HC_LAT){const p=r.femoral.HC_LAT;point([p.x,p.y],'white')}
   if($('measurementLines').checked)paintMeasurement(c,measurementData.ai.find(m=>m.id===measurementUI.selected()),{scale,width:w,height:h})
 }
 bindViewerControls(document.querySelector('.viewers'),[$('original'),$('groundTruth'),$('overlay')],s,draw)
