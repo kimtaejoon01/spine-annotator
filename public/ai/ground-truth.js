@@ -77,7 +77,7 @@ export function resolveGroundTruth(data,filename,width,height,source='GT JSON',o
     }
   }else{
     const polygons=Array.isArray(rawPayload)?rawPayload:(rawPayload?.polygons??[])
-    for(const p of polygons)out.polygons.push({label:p.label??'',points:points(p.points,p.shape==='endplate'?2:3),closed:p.shape!=='endplate'})
+    for(const p of polygons)out.polygons.push({label:p.label??'',shape:p.shape,points:points(p.points,p.shape==='endplate'?2:3),closed:p.shape!=='endplate'})
   }
   const landmarks=coco?(data.landmarks??[]).filter(x=>sameId(x.image_id,record.id)||(data.images.length===1&&x.image_id==null)):(record.landmarks??rawPayload?.landmarks??[])
   for(const p of landmarks){

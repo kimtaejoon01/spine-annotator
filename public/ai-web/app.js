@@ -1,3 +1,6 @@
+import {calculateSagittal} from '../ai/sagittal.js'
+import {paintMeasurement,mountMeasurements} from '../ai/measurement-view.js'
+import {aiMeasurementInput,gtMeasurementInput} from './measurement-input.js'
 import {restoreSavedModels} from './startup.js'
 import {createGroundTruthLoader} from '../ai/ground-truth-loader.js'
 import {loadComparisonLabel,listComparisonLabelMeta} from '../static/api.js'
@@ -10,6 +13,24 @@ import {savedBundle,saveBundle,clearBundle} from './storage.js'
 const $=id=>document.getElementById(id)
 const s={ready:false,busy:false,loadingModels:false,file:null,image:null,imageSize:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
 let gtData=null,gtSource='',gt=null,gtView=null,sizeConfirmedFor=null
+let measurementData={ai:[],gt:[]},measurementCache=null
+const measurementUI=mountMeasurements({cards:$('measurementCards'),detail:$('measurementDetail'),description:$('measurementDefinition'),onSelect:()=>draw()})
+$('measurementLines').onchange=draw
+$('pixelSpacing').oninput=()=>{measurementCache=null;draw()}
+function refreshMeasurements(){
+  const method=$('method').value,anteriorRight=$('anterior').value==='right',width=s.imageSize?.width
+  const spacing=$('pixelSpacing').value
+  const key=[s.result,gt,method,anteriorRight,width,spacing,$('pixelSpacing').validity.badInput]
+  if(measurementCache?.every((x,i)=>x===key[i]))return
+  measurementCache=key
+  const invalid=spacing!==''&&(!(Number(spacing)>0)||!Number.isFinite(Number(spacing)))||$('pixelSpacing').validity.badInput
+  $('measurementError').hidden=!invalid;$('measurementError').textContent=invalid?'길이 보정값은 0보다 큰 수여야 합니다. 현재 SVA는 px로 표시합니다.':''
+  const options={anteriorRight,mmPerPixel:invalid?null:spacing}
+  try{
+    measurementData={ai:calculateSagittal(aiMeasurementInput(s.result,method),options),gt:calculateSagittal(gtMeasurementInput(gt,{width,anteriorRight,method}),options)}
+  }catch(error){measurementData={ai:calculateSagittal({points:{}},options),gt:calculateSagittal({points:{}},options)};$('measurementError').hidden=false;$('measurementError').textContent='측정 기준점 확인 필요: '+error.message}
+  measurementUI.set(measurementData)
+}
 let savedGT={status:'idle',data:null,error:null},gtUploadGeneration=0
 const gtLoader=createGroundTruthLoader(loadComparisonLabel,listComparisonLabelMeta,state=>{savedGT=state;refreshGT();draw()})
 function bridgeHasLabels(){const b=s.request?.groundTruth;return !!(b?.polygons?.length||b?.landmarks?.length)}
@@ -63,7 +84,7 @@ $('builtin').onclick=async()=>{
   }catch(e){$('setupStatus').textContent=e.message}finally{busy(false)}
 }
 $('cancel').onclick=()=>{
-  worker?.terminate();worker=null;for(const p of pending.values())p.reject(Error('작업을 중단했습니다. 모델을 다시 불러오면 재실행할 수 있습니다.'));pending.clear();s.ready=false;s.result=null;updateButtons()
+  worker?.terminate();worker=null;for(const p of pending.values())p.reject(Error('작업을 중단했습니다. 모델을 다시 불러오면 재실행할 수 있습니다.'));pending.clear();s.ready=false;s.result=null;updateButtons();draw()
 }
 for(const [key,label] of Object.entries(names)){
   const el=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=true
@@ -101,7 +122,7 @@ async function setFile(file,bridge=null){
   gt=null;sizeConfirmedFor=null
   s.file=file;s.result=null;s.job=null;s.request=bridge;s.image=null;s.imageSize=null;s.zoom=1;s.panX=0;s.panY=0
   $('filename').textContent=file.name;$('review').hidden=true;$('summary').replaceChildren();renderTimings($('timings'),null);$('table').replaceChildren();$('decoder').textContent=''
-  $('apply').hidden=!bridge;$('empty').hidden=false;updateButtons()
+  $('apply').hidden=!bridge;$('empty').hidden=true;$('pixelSpacing').value='';measurementCache=null;updateButtons();draw()
   gtLoader.clear()
   if(!bridgeHasLabels())void gtLoader.load(file.name)
   try{const image=await loadBrowserImage(file);if(s.file!==file)return;s.image=image;s.imageSize={width:image.naturalWidth,height:image.naturalHeight};$('empty').hidden=true;refreshGT();draw()}catch{if(s.file!==file)return;refreshGT();draw()}
@@ -160,7 +181,7 @@ async function analyze(){
   finally{busy(false)}
 }
 $('run').onclick=analyze
-$('anterior').onchange=()=>{if(s.result){s.result=null;renderTimings($('timings'),null);updateButtons();draw();message('전방 방향이 바뀌었습니다. 전체 분석을 다시 실행해 주세요.')}}
+$('anterior').onchange=()=>{if(s.result){s.result=null;renderTimings($('timings'),null);updateButtons();message('전방 방향이 바뀌었습니다. 전체 분석을 다시 실행해 주세요.')}draw()}
 $('method').onchange=()=>{draw();if(s.result)renderTable()}
 $('l5').onchange=updateButtons
 $('s1').onclick=async()=>{
@@ -197,7 +218,7 @@ $('json').onclick=()=>saveBlob(new Blob([JSON.stringify(s.result,null,2)],{type:
 $('download').onclick=async()=>{busy(true);try{const x=await call('export',{options:{method:$('method').value,layers}});saveBlob(x.blob,'spine_ai_results.zip');message('ZIP 다운로드 완료')}catch(e){message(e.message)}finally{busy(false)}}
 
 
-function draw(){for(const id of ['original','groundTruth','overlay'])paint($(id),id)}
+function draw(){refreshMeasurements();for(const id of ['original','groundTruth','overlay'])paint($(id),id)}
 function paint(canvas,mode){
   const dpr=Math.min(devicePixelRatio||1,2),rect=canvas.getBoundingClientRect();canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr)
   const c=canvas.getContext('2d');c.scale(dpr,dpr);c.fillStyle='#080c12';c.fillRect(0,0,rect.width,rect.height)
@@ -205,7 +226,7 @@ function paint(canvas,mode){
   const w=s.imageSize?.width||s.image.naturalWidth,h=s.imageSize?.height||s.image.naturalHeight
   const scale=Math.min(rect.width/w,rect.height/h)*s.zoom;c.translate((rect.width-w*scale)/2+s.panX,(rect.height-h*scale)/2+s.panY);c.scale(scale,scale)
   c.drawImage(s.image,0,0,w,h)
-  if(mode==='groundTruth'){paintGroundTruth(c,gt,scale);return}
+  if(mode==='groundTruth'){paintGroundTruth(c,gt,scale);if($('measurementLines').checked)paintMeasurement(c,measurementData.gt.find(m=>m.id===measurementUI.selected()),{scale,width:w,height:h});return}
   if(mode!=='overlay'||!s.result)return
   const r=s.result,stroke=1.4/scale,dot=2.7/scale,fs=11/scale;c.lineWidth=stroke;c.lineJoin='round';c.font=`${fs}px sans-serif`
   const line=(p,color,closed=false,fill=false)=>{if(!p?.length)return;c.beginPath();p.forEach((pt,i)=>i?c.lineTo(...pt):c.moveTo(...pt));if(closed)c.closePath();if(fill){c.fillStyle=color+'38';c.fill()}c.strokeStyle=color;c.stroke()}
@@ -218,6 +239,7 @@ function paint(canvas,mode){
   if(layers.s1&&r.s1?.points){line(r.s1.points,colors.s1);r.s1.points.forEach(p=>point(p,colors.s1));tag(r.s1.points[0],'S1',colors.s1)}
   if(layers.fh_circle)for(const x of r.femoral?.instances||[]){const color=x.slot?'#ff9d61':'#ff77b7';c.beginPath();c.arc(x.cx,x.cy,x.radius,0,Math.PI*2);c.strokeStyle=color;c.stroke();point([x.cx,x.cy],color);tag([x.cx+x.radius,x.cy],`FH${x.slot+1}`,color)}
   if(layers.hc&&r.femoral?.HC_LAT){const p=r.femoral.HC_LAT;point([p.x,p.y],'white');tag([p.x+7/scale,p.y+14/scale],'HC','white')}
+  if($('measurementLines').checked)paintMeasurement(c,measurementData.ai.find(m=>m.id===measurementUI.selected()),{scale,width:w,height:h})
 }
 bindViewerControls(document.querySelector('.viewers'),[$('original'),$('groundTruth'),$('overlay')],s,draw)
 $('fit').onclick=()=>{s.zoom=1;s.panX=s.panY=0;draw()};new ResizeObserver(draw).observe($('original'))
