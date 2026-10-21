@@ -1,12 +1,17 @@
-import {resolveGroundTruth,prepareGroundTruth,paintGroundTruth} from '../ai/ground-truth.js'
+import {createGroundTruthLoader} from '../ai/ground-truth-loader.js'
+import {loadComparisonLabel,listComparisonLabelMeta} from '../static/api.js'
+import {groundTruthView,prepareGroundTruth,paintGroundTruth} from '../ai/ground-truth.js'
 import {renderTimings} from '../ai/timing-view.js'
 import {bindViewerControls} from '../ai/viewer-controls.js'
 import {validateResult,toAnnotations} from '../ai/result.js'
 import {readBundle,validateManifest,STAGES} from './bundle.js'
 import {savedBundle,saveBundle,clearBundle} from './storage.js'
 const $=id=>document.getElementById(id)
-const s={ready:false,busy:false,file:null,image:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
-let gtData=null,gtSource='',gt=null
+const s={ready:false,busy:false,file:null,image:null,imageSize:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
+let gtData=null,gtSource='',gt=null,gtView=null,sizeConfirmedFor=null
+let savedGT={status:'idle',data:null,error:null},gtUploadGeneration=0
+const gtLoader=createGroundTruthLoader(loadComparisonLabel,listComparisonLabelMeta,state=>{savedGT=state;refreshGT();draw()})
+function bridgeHasLabels(){const b=s.request?.groundTruth;return !!(b?.polygons?.length||b?.landmarks?.length)}
 const colors={spine:'#48e0c6',corners:'#bc9cff',s1:'#ffd34d',fh_mask:'#ff77b7',fh_circle:'#ff9d61',hc:'#ffffff'}
 const layers={spine:true,number:true,corners:true,s1:true,fh_mask:true,fh_circle:true,hc:true}
 const names={spine:'척추 윤곽',number:'번호',corners:'꼭지점',s1:'S1',fh_mask:'골두 분할',fh_circle:'골두 원',hc:'HC'}
@@ -19,7 +24,7 @@ function call(type,options={}){
   const id=++seq;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});worker.postMessage({type,id,...options})})
 }
 function message(text){$('status').textContent=text}
-function busy(value){s.busy=value;for(const id of ['gtUpload','gtClear','upload','load','run','anterior','bundleFolder','bundleFiles','restore','builtin','forget','device','setupToggle'])$(id).disabled=value;updateButtons();$('cancel').hidden=!value}
+function busy(value){s.busy=value;for(const id of ['gtUpload','gtClear','gtReload','gtUseCoordinates','upload','load','run','anterior','bundleFolder','bundleFiles','restore','builtin','forget','device','setupToggle'])$(id).disabled=value;updateButtons();$('cancel').hidden=!value}
 function updateButtons(){
   $('load').disabled=s.busy||!modelFiles;$('restore').disabled=s.busy||!cached;$('builtin').disabled=s.busy||!builtin
   $('run').disabled=s.busy||!s.file||!s.ready
@@ -77,35 +82,52 @@ async function setFile(file,bridge=null){
   if(s.busy)return
   if(!file)return
   if(file.size>32*1024*1024){message('32 MB 이하의 영상을 올려 주세요.');return}
-  gt=null
-  s.file=file;s.result=null;s.job=null;s.request=bridge;s.image=null;s.zoom=1;s.panX=0;s.panY=0
+  gt=null;sizeConfirmedFor=null
+  s.file=file;s.result=null;s.job=null;s.request=bridge;s.image=null;s.imageSize=null;s.zoom=1;s.panX=0;s.panY=0
   $('filename').textContent=file.name;$('review').hidden=true;$('summary').replaceChildren();renderTimings($('timings'),null);$('table').replaceChildren();$('decoder').textContent=''
   $('apply').hidden=!bridge;$('empty').hidden=false;updateButtons()
-  try{const image=await loadBrowserImage(file);if(s.file!==file)return;s.image=image;$('empty').hidden=true;refreshGT();draw()}catch{if(s.file!==file)return;refreshGT();draw()}
+  gtLoader.clear()
+  if(!bridgeHasLabels())void gtLoader.load(file.name)
+  try{const image=await loadBrowserImage(file);if(s.file!==file)return;s.image=image;s.imageSize={width:image.naturalWidth,height:image.naturalHeight};$('empty').hidden=true;refreshGT();draw()}catch{if(s.file!==file)return;refreshGT();draw()}
   if(s.ready)analyze();else{message('영상이 준비되었습니다. 모델을 불러오면 자동 분석합니다.');showSetup()}
 }
 function refreshGT(){
-  gt=null
-  const data=gtData??s.request?.groundTruth,source=gtData?gtSource:'Annotator 현재 라벨 (분석 시작 시점)'
-  try{
-    if(s.image&&data){
-      const w=s.result?.image.width||s.image.naturalWidth,h=s.result?.image.height||s.image.naturalHeight
-      gt=prepareGroundTruth(resolveGroundTruth(data,s.file.name,w,h,source),w,h)
-    }
-    $('gtStatus').textContent=gt?`${source} · 윤곽 ${gt.polygons.length+gt.masks.length}개 · 점 ${gt.landmarks.length}개`:
-      data?(s.image?'현재 영상과 일치하는 GT가 없습니다.':'영상을 선택하면 GT를 연결합니다.'):'GT JSON을 선택하거나 Annotator에서 라벨을 열고 AI 분석을 누르세요.'
-  }catch(e){$('gtStatus').textContent=e.message}
-  $('gtPaneStatus').textContent=gt?'GT / 참조 라벨':'GT 없음'
+  gt=null;gtView=null;$('gtUseCoordinates').hidden=true
+  if(!s.image){
+    $('gtPaneStatus').textContent=savedGT.status==='loading'?'GT 조회 중':'GT 대기'
+    $('gtStatus').textContent=s.file?'영상 준비 후 GT를 표시합니다.':'영상을 선택하면 서버 저장 라벨을 조회합니다. GT JSON도 선택할 수 있습니다.'
+    return
+  }
+  const bridge=s.request?.groundTruth
+  const snapshot={data:bridge,source:'Annotator 현재 라벨 (분석 시작 시점)'}
+  const candidates=[{data:gtData,source:gtSource},bridgeHasLabels()?snapshot:null,
+    {data:savedGT.data,source:'서버 저장 라벨'+(savedGT.data?.labeler_id?' · '+savedGT.data.labeler_id:'')},!bridgeHasLabels()?snapshot:null]
+  const w=s.imageSize?.width||s.image.naturalWidth,h=s.imageSize?.height||s.image.naturalHeight
+  gtView=groundTruthView(candidates,s.file.name,w,h,{acceptedSizeData:sizeConfirmedFor})
+  if(gtView.code==='missing'){
+    if(savedGT.status==='loading'){gtView.title='GT 조회 중';gtView.message='현재 파일명으로 서버 저장 라벨을 확인하고 있습니다.'}
+    else if(savedGT.status==='error'){gtView.title='GT 조회 실패';gtView.message=savedGT.error+' · 서버 GT 다시 불러오기를 누르세요.'}
+    else if(savedGT.status==='missing'){gtView.message+=' 이 사이트의 서버에도 저장 라벨이 없습니다. 학습 JSON의 GT는 GT JSON 불러오기로 연결하세요.'}
+  }
+  try{gt=prepareGroundTruth(gtView.gt,w,h)}
+  catch(error){gt=null;gtView.title='GT 표시 오류';gtView.message=error.message}
+  $('gtStatus').textContent=gtView.message
+  $('gtPaneStatus').textContent=gtView.title
+  $('gtUseCoordinates').hidden=gtView.code!=='GT_SIZE_MISSING'
 }
 $('gtUpload').onchange=async e=>{
   const file=e.target.files[0];if(!file)return
+  const request=++gtUploadGeneration
   try{
     if(file.size>100*1024*1024)throw Error('GT JSON은 100 MB 이하로 선택해 주세요.')
     const parsed=JSON.parse((await file.text()).replace(/^\uFEFF/,''))
-    gtData=parsed;gtSource=file.name;refreshGT();draw()
-  }catch(err){$('gtStatus').textContent='GT 불러오기 실패: '+err.message}
+    if(request!==gtUploadGeneration)return
+    gtData=parsed;gtSource=file.name;sizeConfirmedFor=null;refreshGT();draw()
+  }catch(err){if(request===gtUploadGeneration){$('gtStatus').textContent='GT 불러오기 실패: '+err.message;$('gtPaneStatus').textContent='GT 읽기 오류'}}
 }
-$('gtClear').onclick=()=>{gtData=null;gtSource='';$('gtUpload').value='';refreshGT();draw()}
+$('gtClear').onclick=()=>{gtUploadGeneration++;gtData=null;gtSource='';sizeConfirmedFor=null;$('gtUpload').value='';refreshGT();draw()}
+$('gtReload').onclick=()=>{if(s.file){sizeConfirmedFor=null;void gtLoader.load(s.file.name)}}
+$('gtUseCoordinates').onclick=()=>{if(gtView?.code==='GT_SIZE_MISSING'){sizeConfirmedFor=gtView.sourceData;refreshGT();draw()}}
 $('upload').onchange=e=>setFile(e.target.files[0])
 for(const type of ['dragover','drop'])$('drop').addEventListener(type,e=>{e.preventDefault();if(type==='drop'){if(!s.busy)setFile(e.dataTransfer.files[0]);$('drop').classList.remove('drag')}else $('drop').classList.add('drag')})
 $('drop').ondragleave=()=>$('drop').classList.remove('drag')
@@ -115,6 +137,7 @@ async function analyze(){
   try{
     const done=await call('predict',{file:s.file,anterior:$('anterior').value==='right'})
     s.result=validateResult(done.result)
+    s.imageSize={width:s.result.image.width,height:s.result.image.height}
     s.image=await loadBrowserImage(done.preview);$('empty').hidden=true;refreshGT()
     renderResult()
   }catch(e){s.result=null;message('분석 실패: '+e.message);draw()}
@@ -163,7 +186,7 @@ function paint(canvas,mode){
   const dpr=Math.min(devicePixelRatio||1,2),rect=canvas.getBoundingClientRect();canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr)
   const c=canvas.getContext('2d');c.scale(dpr,dpr);c.fillStyle='#080c12';c.fillRect(0,0,rect.width,rect.height)
   if(!s.image)return
-  const w=s.result?.image.width||s.image.naturalWidth,h=s.result?.image.height||s.image.naturalHeight
+  const w=s.imageSize?.width||s.image.naturalWidth,h=s.imageSize?.height||s.image.naturalHeight
   const scale=Math.min(rect.width/w,rect.height/h)*s.zoom;c.translate((rect.width-w*scale)/2+s.panX,(rect.height-h*scale)/2+s.panY);c.scale(scale,scale)
   c.drawImage(s.image,0,0,w,h)
   if(mode==='groundTruth'){paintGroundTruth(c,gt,scale);return}

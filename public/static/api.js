@@ -404,3 +404,12 @@ export async function migrateLegacyLabels({ deleteAfter = false } = {}) {
   }
   return results
 }
+
+/** Read saved labels for the AI comparison without writing a local cache. */
+export async function loadComparisonLabel(filename) {
+  return apiFetch(`/api/labels/${encodeURIComponent(filename)}`, { cache: 'no-store' })
+}
+export async function listComparisonLabelMeta() {
+  const data = await apiFetch('/api/labels', { cache: 'no-store' })
+  return data.items || []
+}

@@ -1,9 +1,10 @@
 // Read-only label display. These records never enter inference or AI application.
 const normalized=s=>String(s??'').replaceAll('\\','/').normalize('NFC')
 const basename=s=>normalized(s).split('/').pop()
-function select(records,filename){
+export function selectGroundTruthRecord(records,filename){
   let matches=records.filter(r=>normalized(r.filename??r.file_name)===normalized(filename))
   if(!matches.length)matches=records.filter(r=>basename(r.filename??r.file_name)===basename(filename))
+  if(!matches.length)matches=records.filter(r=>basename(r.filename??r.file_name).toLowerCase()===basename(filename).toLowerCase())
   if(matches.length>1)throw Error('같은 파일명의 GT가 여러 개입니다. 라벨러/데이터셋 하나만 내보내 주세요.')
   return matches[0]??null
 }
@@ -35,18 +36,33 @@ export function decodeRLE(rle,width,height){
   counts.forEach((n,i)=>{if(i%2)for(let j=offset;j<offset+n;j++)mask[(j%height)*width+Math.floor(j/height)]=1;offset+=n})
   return mask
 }
-export function resolveGroundTruth(data,filename,width,height,source='GT JSON'){
+export function resolveGroundTruth(data,filename,width,height,source='GT JSON',options={}){
   if(!data)return null
+  if(typeof data!=='object')throw Error('GT JSON 형식이 아닙니다. COCO 또는 Annotator raw 내보내기를 선택하세요.')
   if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width*height>32_000_000)throw Error('영상 크기를 확인할 수 없습니다.')
   const coco=Array.isArray(data.images)&&Array.isArray(data.annotations)
   const records=coco?data.images:Array.isArray(data.items)?data.items:Array.isArray(data)?data:[data]
-  const record=select(records,filename);if(!record)return null
-  if(Number(record.width??record.image_width)!==width||Number(record.height??record.image_height)!==height)throw Error('GT 영상 크기가 현재 X-ray와 다르거나 누락되었습니다. 원본 크기의 라벨을 사용하세요.')
-  const out={source,polygons:[],landmarks:[],masks:[]}
+  if(records.some(r=>!r||typeof r!=='object'))throw Error('GT 영상 목록 형식 오류')
+  const record=selectGroundTruthRecord(records,filename);if(!record)return null
+  const rw=Number(record.width??record.image_width),rh=Number(record.height??record.image_height)
+  const missingSize=!(rw>0)||!(rh>0)
+  if((rw>0&&rw!==width)||(rh>0&&rh!==height)){
+    const error=Error(`GT는 있습니다. 크기가 다릅니다: GT ${rw||'?'} × ${rh||'?'} / 영상 ${width} × ${height}. 자동 확대·축소하지 않습니다.`)
+    error.code='GT_SIZE_MISMATCH';throw error
+  }
+  if(missingSize&&!options.allowMissingSize){
+    const error=Error('GT는 있지만 저장된 원본 크기 정보가 없습니다. 같은 원본 영상의 좌표인지 확인한 뒤 아래 버튼으로 표시할 수 있습니다.')
+    error.code='GT_SIZE_MISSING';throw error
+  }
+  const out={source,warnings:missingSize?['GT 크기 미기록 · 현재 영상에 원본 좌표 그대로 표시']:[],polygons:[],landmarks:[],masks:[]}
+  const sameId=(a,b)=>a!=null&&b!=null&&String(a)===String(b)
+
+  let rawPayload=record.polygons
+  if(!coco&&rawPayload==null&&record.polygons_json!=null)rawPayload=JSON.parse(record.polygons_json)
   if(coco){
-    const categories=new Map((data.categories??[]).map(x=>[x.id,x]))
-    for(const a of data.annotations.filter(x=>x.image_id===record.id)){
-      const cat=categories.get(a.category_id),label=cat?.name??String(a.category_id)
+    const categories=new Map((data.categories??[]).map(x=>[String(x.id),x]))
+    for(const a of data.annotations.filter(x=>sameId(x.image_id,record.id))){
+      const cat=categories.get(String(a.category_id)),label=cat?.name??String(a.category_id)
       if(a.segmentation&&!Array.isArray(a.segmentation))out.masks.push({label,data:decodeRLE(a.segmentation,width,height)})
       else for(const p of a.segmentation??[])if(p.length)out.polygons.push({label,points:points(p,3),closed:true})
       if(a.keypoints?.length){
@@ -60,15 +76,39 @@ export function resolveGroundTruth(data,filename,width,height,source='GT JSON'){
       }
     }
   }else{
-    for(const p of record.polygons??[])out.polygons.push({label:p.label??'',points:points(p.points,p.shape==='endplate'?2:3),closed:p.shape!=='endplate'})
+    const polygons=Array.isArray(rawPayload)?rawPayload:(rawPayload?.polygons??[])
+    for(const p of polygons)out.polygons.push({label:p.label??'',points:points(p.points,p.shape==='endplate'?2:3),closed:p.shape!=='endplate'})
   }
-  const landmarks=coco?(data.landmarks??[]).filter(x=>x.image_id===record.id||(data.images.length===1&&x.image_id==null)):(record.landmarks??[])
+  const landmarks=coco?(data.landmarks??[]).filter(x=>sameId(x.image_id,record.id)||(data.images.length===1&&x.image_id==null)):(record.landmarks??rawPayload?.landmarks??[])
   for(const p of landmarks){
     if(p.visibility==='absent')continue
     const xy=points([p.x,p.y])[0];out.landmarks.push({label:p.label??'',x:xy[0],y:xy[1]})
   }
+  if(missingSize&&options.allowMissingSize){
+    const coords=[...out.polygons.flatMap(p=>p.points),...out.landmarks.map(p=>[p.x,p.y])]
+    if(coords.some(([x,y])=>x<0||y<0||x>width||y>height)){
+      const error=Error('GT 좌표가 현재 영상 범위를 벗어납니다. 원본 영상 크기를 확인하세요.');error.code='GT_SIZE_MISMATCH';throw error
+    }
+  }
   return out
 }
+
+export function groundTruthView(candidates,filename,width,height,options={}){
+  let unmatched=false
+  for(const candidate of candidates){
+    if(!candidate?.data)continue
+    try{
+      const gt=resolveGroundTruth(candidate.data,filename,width,height,candidate.source,{...options,allowMissingSize:options.allowMissingSize||options.acceptedSizeData===candidate.data})
+      if(!gt){unmatched=true;continue}
+      return {gt,title:'GT / 참조 라벨',code:'found',message:`${candidate.source} · 윤곽 ${gt.polygons.length+gt.masks.length}개 · 점 ${gt.landmarks.length}개`+(gt.warnings.length?' · '+gt.warnings.join(' · '):'')+(unmatched?' · 선택 JSON에 현재 영상 없음, 다른 라벨 사용':''),sourceData:candidate.data}
+    }catch(error){
+      const title=error.code==='GT_SIZE_MISSING'?'GT 있음 · 크기 확인 필요':error.code==='GT_SIZE_MISMATCH'?'GT 있음 · 크기 불일치':'GT 읽기 오류'
+      return {gt:null,title,code:error.code??'GT_READ_ERROR',message:candidate.source+' · '+error.message,sourceData:candidate.data}
+    }
+  }
+  return {gt:null,title:'GT 없음',code:'missing',message:unmatched?`현재 파일명과 일치하는 GT가 없습니다: ${filename}`:'GT JSON 또는 Annotator 저장 라벨이 필요합니다.',sourceData:null}
+}
+
 export function prepareGroundTruth(gt,width,height){
   if(!gt)return null
   // Raster GT is rendered once, not decoded on every zoom event.

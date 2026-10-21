@@ -4,7 +4,7 @@
 <div class="eyebrow">X-RAY ANALYSIS</div><h1>한 장에서<br>전체 구조까지.</h1><p class="muted">척추 분할 · 번호 · 꼭지점<br>S1 상종판 · 대퇴골두</p>
 <label id="drop" class="drop"><span class="upload-icon">↑</span><strong>X-ray 선택</strong><span>파일 선택 또는 끌어 놓기</span><small>LAT · PNG / JPEG / TIFF / BMP</small><input id="upload" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.bmp" hidden></label>
 <div id="filename" class="filename">선택한 영상이 없습니다</div><p class="muted">영상은 서버에 전송하지 않습니다. 분석은 이 브라우저에서 실행됩니다.</p>
-<details open><summary>GT / 참조 라벨</summary><label class="field">GT JSON 불러오기<input id="gtUpload" type="file" accept=".json,application/json"></label><p id="gtStatus" class="muted">Annotator에 열어 둔 라벨을 자동으로 전달받거나 COCO / raw JSON을 선택하세요.</p><button id="gtClear" class="ghost">선택 JSON 해제</button><p class="muted">GT는 비교 표시용입니다. 분석이나 라벨 적용에는 사용하지 않습니다.</p></details>
+<details open><summary>GT / 참조 라벨</summary><label class="field">GT JSON 불러오기<input id="gtUpload" type="file" accept=".json,application/json"></label><p id="gtStatus" class="muted">영상 파일명으로 서버 저장 라벨을 자동 조회합니다. COCO / raw GT JSON도 선택할 수 있습니다.</p><button id="gtClear" class="ghost">선택 JSON 해제</button><button id="gtReload" class="ghost">서버 GT 다시 불러오기</button><button id="gtUseCoordinates" class="secondary" hidden>같은 원본 영상입니다 · 원본 좌표로 표시</button><p class="muted">서버 GT 조회에는 파일명만 사용하며 영상은 전송하지 않습니다. GT는 비교 표시용이며 분석이나 라벨 적용에는 사용하지 않습니다.</p></details>
 <label class="field">환자 전방 방향<select id="anterior"><option value="left">화면 왼쪽</option><option value="right">화면 오른쪽</option></select></label>
 <button id="run" class="primary" disabled>전체 분석</button>
 <button id="cancel" class="ghost" hidden>실행 중단</button><div class="progress"><div id="bar"></div></div><div id="status" role="status" aria-live="polite">모델 설정에서 학습된 모델을 불러오세요.</div>
