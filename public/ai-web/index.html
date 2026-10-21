@@ -26,7 +26,7 @@
 <details><summary>폴더 선택을 지원하지 않는 브라우저</summary><label class="field">변환 결과 파일 모두 선택<input id="bundleFiles" type="file" multiple accept=".json,.onnx,.npz"></label></details>
 <div id="bundleInfo" class="muted">브라우저용 모델 폴더를 선택하세요.</div>
 <label class="field">계산 장치<select id="device"><option value="auto">자동 · GPU 사용 가능 여부 확인</option><option value="wasm">CPU 사용</option></select></label>
-<label class="remember"><input id="remember" type="checkbox" checked> 이 브라우저에 모델 저장</label>
+<label class="remember"><input id="remember" type="checkbox" checked> 이 브라우저에 저장 · 다음 접속 시 자동 불러오기</label>
 <p class="muted">최초 실행에는 실행 환경을 내려받습니다. GPU 호환성과 출력값을 확인하고 필요한 단계는 CPU에서 실행합니다.</p>
 <button id="load" type="submit" class="primary" disabled>모델 불러오기</button><div id="setupStatus" role="status" aria-live="polite"></div>
 <details><summary>기존 .pt / .pth 모델 준비</summary><p class="muted">학습한 컴퓨터나 Colab에서 딱 한 번 브라우저용으로 변환합니다. 이후 사용자는 Python 설치 없이 이 페이지에서 모델을 선택하면 됩니다.</p><a href="./export_browser.ipynb" download>모델 변환용 Colab 노트북 받기</a><br><a href="./update_femoral.ipynb" download>기존 변환 파일 없이 FH v3 포함 전체 모델 만들기</a><p class="muted">A 분할 · 척추 번호 · S1 · 대퇴골두 모델 폴더 4개를 지정합니다. 실제 학습 가중치는 아직 웹사이트에 포함되어 있지 않습니다.</p></details>

@@ -1,3 +1,4 @@
+import {restoreSavedModels} from './startup.js'
 import {createGroundTruthLoader} from '../ai/ground-truth-loader.js'
 import {loadComparisonLabel,listComparisonLabelMeta} from '../static/api.js'
 import {groundTruthView,prepareGroundTruth,paintGroundTruth} from '../ai/ground-truth.js'
@@ -7,7 +8,7 @@ import {validateResult,toAnnotations} from '../ai/result.js'
 import {readBundle,validateManifest,STAGES} from './bundle.js'
 import {savedBundle,saveBundle,clearBundle} from './storage.js'
 const $=id=>document.getElementById(id)
-const s={ready:false,busy:false,file:null,image:null,imageSize:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
+const s={ready:false,busy:false,loadingModels:false,file:null,image:null,imageSize:null,result:null,job:null,panX:0,panY:0,zoom:1,request:null,previewUrl:null}
 let gtData=null,gtSource='',gt=null,gtView=null,sizeConfirmedFor=null
 let savedGT={status:'idle',data:null,error:null},gtUploadGeneration=0
 const gtLoader=createGroundTruthLoader(loadComparisonLabel,listComparisonLabelMeta,state=>{savedGT=state;refreshGT();draw()})
@@ -16,6 +17,7 @@ const colors={spine:'#48e0c6',corners:'#bc9cff',s1:'#ffd34d',fh_mask:'#ff77b7',f
 const layers={spine:true,number:true,corners:true,s1:true,fh_mask:true,fh_circle:true,hc:true}
 const names={spine:'척추 윤곽',number:'번호',corners:'꼭지점',s1:'S1',fh_mask:'골두 분할',fh_circle:'골두 원',hc:'HC'}
 let worker=null,seq=0,pending=new Map(),modelFiles=null,cached=null,builtin=null
+let modelChoice=0,startupPending=true,pendingBridge=null
 function call(type,options={}){
   if(!worker){worker=new Worker(new URL('./worker.js',import.meta.url));worker.onmessage=({data:m})=>{
     if(m.type==='progress'){message(m.text);$('setupStatus').textContent=m.text;$('bar').style.width=m.value+'%';return}
@@ -32,17 +34,24 @@ function updateButtons(){
   $('s1').disabled=s.busy||!s.result||$('l5').value===''
 }
 function showSetup(){if(!$('setup').open)$('setup').showModal()}
-$('setupToggle').onclick=showSetup;$('closeSetup').onclick=()=>$('setup').close()
-async function selectBundle(files){
-  try{const b=await readBundle(files);modelFiles=b.files;$('bundleInfo').textContent=`모델 6개 · FH ${b.manifest.fh.version??'v2'} · ${(modelFiles.reduce((n,f)=>n+f.size,0)/1024**2).toFixed(0)} MB`;$('load').disabled=false;$('setupStatus').textContent='모델 불러오기를 누르면 이 컴퓨터에서 검증합니다.'}
-  catch(e){modelFiles=null;$('load').disabled=true;$('setupStatus').textContent=e.message}
+$('setupToggle').onclick=()=>{modelChoice++;showSetup()};$('closeSetup').onclick=()=>$('setup').close()
+async function selectBundle(files,{automatic=false}={}){
+  if(automatic&&modelChoice)return false
+  const choice=automatic?0:++modelChoice
+  try{
+    const b=await readBundle(files)
+    if(choice!==modelChoice)return false
+    modelFiles=b.files;$('bundleInfo').textContent=`모델 6개 · FH ${b.manifest.fh.version??'v2'} · ${(modelFiles.reduce((n,f)=>n+f.size,0)/1024**2).toFixed(0)} MB`
+    $('load').disabled=s.busy;$('setupStatus').textContent=automatic?'저장된 모델을 자동으로 준비합니다.':'모델 불러오기를 누르면 이 컴퓨터에서 검증합니다.'
+    return true
+  }catch(e){if(choice===modelChoice){modelFiles=null;$('load').disabled=true;$('setupStatus').textContent=e.message}return false}
 }
 $('bundleFolder').onchange=e=>selectBundle(e.target.files)
 $('bundleFiles').onchange=e=>selectBundle(e.target.files)
-$('restore').onclick=()=>selectBundle(cached)
-$('forget').onclick=async()=>{try{await clearBundle();cached=null;$('restore').disabled=true;$('setupStatus').textContent='저장된 모델을 지웠습니다. 선택한 원본 파일은 유지됩니다.'}catch(e){$('setupStatus').textContent=e.message}}
+$('restore').onclick=async()=>{if(await selectBundle(cached))await loadSelectedModels({fromCache:true})}
+$('forget').onclick=async()=>{modelChoice++;try{await clearBundle();cached=null;$('restore').disabled=true;$('setupStatus').textContent='저장된 모델을 지웠습니다. 선택한 원본 파일은 유지됩니다.'}catch(e){$('setupStatus').textContent=e.message}}
 $('builtin').onclick=async()=>{
-  if(!builtin)return;busy(true)
+  if(!builtin)return;modelChoice++;busy(true)
   try{
     const selected=[new File([JSON.stringify(builtin)],'manifest.json',{type:'application/json'})]
     for(const name of STAGES){const d=builtin.models[name];for(const file of [d.file,d.check_file]){
@@ -60,18 +69,25 @@ for(const [key,label] of Object.entries(names)){
   const el=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=true
   check.onchange=()=>{layers[key]=check.checked;draw()};el.append(check,document.createTextNode(label));$('layers').append(el)
 }
-$('setupForm').onsubmit=async e=>{
-  e.preventDefault();if(!modelFiles||s.busy)return;busy(true);s.ready=false;s.result=null;draw()
+$('setupForm').onsubmit=async e=>{e.preventDefault();modelChoice++;await loadSelectedModels()}
+async function loadSelectedModels({fromCache=false}={}){
+  if(!modelFiles||s.busy)return false
+  s.loadingModels=true;busy(true);s.ready=false;s.result=null;draw()
+  message(fromCache?'저장된 모델을 자동으로 불러오는 중입니다.':'모델을 불러오는 중입니다.')
   try{
     const loaded=await call('load',{files:modelFiles,device:$('device').value});s.ready=true
     const gpu=Object.values(loaded.providers).some(x=>x==='webgpu')
     $('connection').textContent='이 컴퓨터 · '+(gpu?'GPU + CPU':'CPU')+' · FH '+loaded.fhVersion
     let cacheNote=''
-    if($('remember').checked){try{await saveBundle(modelFiles);cached=modelFiles;cacheNote=' 다음에도 이 브라우저에서 불러올 수 있습니다.'}catch{cacheNote=' 저장 공간이 부족해 모델을 기억하지 못했습니다. 이번 분석은 가능합니다.'}}
+    if(!fromCache&&$('remember').checked){try{await saveBundle(modelFiles);cached=modelFiles;cacheNote=' 다음 접속부터 자동으로 불러옵니다.'}catch{cacheNote=' 저장 공간이 부족해 모델을 기억하지 못했습니다. 이번 분석은 가능합니다.'}}
     $('setup').close();message('모델 검증 완료.'+cacheNote)
-  }catch(e){s.ready=false;worker?.terminate();worker=null;message(e.message);$('setupStatus').textContent=e.message}
-  finally{busy(false)}
-  if(s.ready&&s.file)analyze()
+  }catch(e){s.ready=false;worker?.terminate();worker=null;message(e.message);$('setupStatus').textContent=e.message;showSetup()}
+  finally{s.loadingModels=false;busy(false)}
+  // An opener may send its image while automatic initialization is running.
+  // Consume it before considering a previously selected image for inference.
+  if(pendingBridge){const next=pendingBridge;pendingBridge=null;await setFile(next.file,next.bridge)}
+  else if(s.ready&&s.file)void analyze()
+  return s.ready
 }
 async function loadBrowserImage(blob){
   const url=URL.createObjectURL(blob),im=new Image()
@@ -89,7 +105,7 @@ async function setFile(file,bridge=null){
   gtLoader.clear()
   if(!bridgeHasLabels())void gtLoader.load(file.name)
   try{const image=await loadBrowserImage(file);if(s.file!==file)return;s.image=image;s.imageSize={width:image.naturalWidth,height:image.naturalHeight};$('empty').hidden=true;refreshGT();draw()}catch{if(s.file!==file)return;refreshGT();draw()}
-  if(s.ready)analyze();else{message('영상이 준비되었습니다. 모델을 불러오면 자동 분석합니다.');showSetup()}
+  if(s.ready)analyze();else if(!startupPending){message('영상이 준비되었습니다. 모델을 불러오면 자동 분석합니다.');showSetup()}
 }
 function refreshGT(){
   gt=null;gtView=null;$('gtUseCoordinates').hidden=true
@@ -211,9 +227,12 @@ let openerOrigin=null
 try{const x=new URL(new URLSearchParams(location.search).get('opener'));if(x.origin===location.origin)openerOrigin=x.origin}catch{}
 function notifyReady(){if(window.opener&&openerOrigin)window.opener.postMessage({type:'spine-ai:ready'},openerOrigin)}
 window.addEventListener('message',e=>{
-  if(!window.opener||e.source!==window.opener||e.origin!==openerOrigin||e.data?.type!=='spine-ai:image'||s.busy)return
+  if(!window.opener||e.source!==window.opener||e.origin!==openerOrigin||e.data?.type!=='spine-ai:image')return
   const m=e.data;if(!(m.blob instanceof Blob)||typeof m.filename!=='string'||typeof m.requestId!=='string')return
-  setFile(new File([m.blob],m.filename,{type:m.blob.type}),{requestId:m.requestId,origin:e.origin,groundTruth:m.groundTruth??null})
+  const next={file:new File([m.blob],m.filename,{type:m.blob.type}),bridge:{requestId:m.requestId,origin:e.origin,groundTruth:m.groundTruth??null}}
+  if(s.loadingModels){pendingBridge=next;return}
+  if(s.busy)return
+  void setFile(next.file,next.bridge)
 })
 $('apply').onclick=()=>{
   if(!s.result||!s.request||!window.opener)return
@@ -221,6 +240,15 @@ $('apply').onclick=()=>{
     window.opener.postMessage({type:'spine-ai:result',requestId:s.request.requestId,result:s.result,method:$('method').value},s.request.origin);message('Annotator로 결과를 보냈습니다. 기존 창에서 적용 여부를 확인하세요.')
   }catch(e){message(e.message)}
 }
-showSetup();notifyReady()
-savedBundle().then(files=>{cached=files||null;$('restore').disabled=!cached;if(cached)$('setupStatus').textContent='이 브라우저에 저장된 모델이 있습니다.'}).catch(()=>{})
-fetch('/ai-models/default/manifest.json').then(r=>{if(!r.ok)throw Error();return r.json()}).then(m=>{builtin=validateManifest(m);$('builtin').disabled=false;$('builtin').textContent='기본 모델 불러오기'}).catch(()=>{$('builtin').textContent='기본 모델 준비 전'})
+notifyReady()
+message('이 브라우저에 저장된 모델을 확인하는 중입니다.')
+void restoreSavedModels({
+  readSaved:savedBundle,
+  onSaved:files=>{cached=files;updateButtons()},
+  canRestore:()=>modelChoice===0&&!s.busy&&!s.ready,
+  select:files=>selectBundle(files,{automatic:true}),
+  load:()=>loadSelectedModels({fromCache:true}),
+  onMissing:()=>{showSetup();message(modelFiles?'모델 설정을 확인하세요.':'처음 한 번 모델 폴더를 선택하고 불러오세요.')},
+  onError:error=>{showSetup();message('저장된 모델을 읽지 못했습니다. 모델 폴더를 다시 선택해 주세요.');$('setupStatus').textContent=error.message}
+}).finally(()=>{startupPending=false})
+fetch('/ai-models/default/manifest.json').then(r=>{if(!r.ok)throw Error();return r.json()}).then(m=>{builtin=validateManifest(m);$('builtin').disabled=s.busy;$('builtin').textContent='기본 모델 불러오기'}).catch(()=>{$('builtin').textContent='기본 모델 준비 전'})
