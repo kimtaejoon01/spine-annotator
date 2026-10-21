@@ -38,6 +38,7 @@ ops = {
  'seg_key_map': sp['SEG_KEY_MAP'],
  'watershed': (SRC/'watershed_source.py').read_text(),
  'fh': functions((SRC/'fh_source.py').read_text(), ['read_gray','fit_circle_boundary','largest_region','bbox_roi','letterbox','undo_letterbox','normalize','circles_from_slots','hc_result']),
+ 'fh_v3': functions((SRC/'fh_v3_source.py').read_text(), ['read_gray', 'fit_circle_points', 'fit_circle_boundary', 'arc_coverage', 'circle_from_prob', 'largest_region', 'bbox_roi', 'letterbox', 'undo_letterbox', 'normalize', 'circles_from_slots', 'hc_result']),
  's1': functions(s1['CORE'], ['letterbox_geometry','make_letterbox','xy','geom','canonical_pair','l5_coordinates','prior_log_score','heatmap_geometry','spaced_candidates','build_pair_bank','choose_pair','read_gray']),
  'render': functions((ROOT/'ai_server/runtime.py').read_text(), ['to_jsonable','display_base','png_bytes','overlay_image','result_tables','export_result']),
 }

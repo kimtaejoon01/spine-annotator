@@ -128,6 +128,60 @@ def export_one(folder,name,model,args,input_names,output_names,dynamic_axes=None
                 export_strategy=strategy,export_attempts=attempts,
                 numerical_policy=A_PROBABILITY_POLICY if name=='a' else 'elementwise-v1')
 
+def femoral_settings(engine):
+    keys=['COARSE_SIZE','FINE_SIZE','CROP_TOP_RATIO','ROI_PROPOSAL_THRESHOLD','ROI_MARGIN',
+          'COUNT_CONFIDENCE','MIN_REGION_FRACTION','ALLOW_SINGLE_CENTER_AS_HC']
+    if engine.version=='v3':
+        keys+=['TTA_FLIP','SUPERIMPOSED_DIST_RATIO','EDGE_FIT_EXCLUDE_PX','MIN_ARC_COVERAGE','NONCIRCULAR_ERR']
+    return dict({k:engine.ns[k] for k in keys},version=engine.version,threshold=engine.threshold)
+
+def replace_femoral_bundle(existing_bundle,fh,output):
+    """Keep verified A/number/S1 graphs byte-for-byte; export only the new FH pair.
+    The existing bundle and checkpoints are never modified.
+    """
+    source=Path(existing_bundle).expanduser();output=Path(output).expanduser()
+    manifest=read_json(source/'manifest.json')
+    if manifest.get('schema')!='spine-browser-bundle-1' or manifest.get('validation')!='pytorch_vs_onnx_cpu_passed; browser_checks_required_on_load':
+        raise ValueError('기존 변환 완료 폴더(manifest.json 포함)를 지정하세요.')
+    expected=read_json(Path(__file__).parents[1]/'public/ai-web/original_ops.json')['source_sha256']
+    legacy={k:v for k,v in expected.items() if k!='fh_v3_source.py'}
+    actual=manifest.get('operator_source_sha256')
+    if not (actual==expected or (manifest['fh'].get('version','v2')=='v2' and actual==legacy)):
+        raise ValueError('기존 묶음의 전·후처리 버전이 다릅니다. 전체 변환이 필요합니다.')
+    # Verify every preserved graph and its original native PyTorch fixture before copying.
+    preserved=[];seen={'manifest.json'}
+    for stage in STAGES[:4]:
+        d=manifest['models'][stage]
+        for file_key,hash_key,size_key in [('file','sha256','bytes'),('check_file','check_sha256','check_bytes')]:
+            name=d[file_key]
+            if not isinstance(name,str) or not name or Path(name).name!=name or name.startswith('.') or '\\' in name or name in seen:
+                raise ValueError('기존 묶음 파일 이름 오류')
+            seen.add(name);path=source/name
+            if not path.is_file() or path.stat().st_size!=d[size_key] or file_sha(path)!=d[hash_key]:
+                raise ValueError('기존 묶음 파일 누락/변경: '+name)
+            preserved.append(path)
+    if seen & {'fh_coarse.onnx','fh_fine.onnx','fh_coarse_check.npz','fh_fine_check.npz'}:
+        raise ValueError('기존 모델 파일과 FH 출력 이름이 겹칩니다.')
+    if output.exists():raise FileExistsError('새 출력 폴더를 지정하세요: '+str(output))
+    engine=FemoralEngine(fh,torch.device('cpu'))
+    output.mkdir(parents=True)
+    for path in preserved:shutil.copyfile(path,output/path.name)
+    manifest['fh']=femoral_settings(engine);manifest['provenance']['fh']=engine.identity
+    manifest['operator_source_sha256']=expected
+    manifest['created']=time.strftime('%Y-%m-%dT%H:%M:%S')
+    manifest['replaced_stages']=['fh_coarse','fh_fine']
+    # A cached page validation describes the old graphs, so always recheck in the browser.
+    manifest.pop('browser_validation',None);manifest.pop('bundle_sha256',None)
+    rng=torch.Generator().manual_seed(41)
+    for stage in ('coarse','fine'):
+        name='fh_'+stage;size=engine.ns[stage.upper()+'_SIZE']
+        x=torch.rand((1,3,size,size),generator=rng)*2-1
+        manifest['models'][name]=export_one(output,name,FHExport(engine.ns[stage+'_model'],stage=='fine'),(x,),
+            ['image'],['probabilities','count'] if stage=='fine' else ['probabilities'])
+    (output/'manifest.json').write_text(json.dumps(to_jsonable(manifest),ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+    print('FH 교체 완료 (A / 번호 / S1 파일은 그대로 복사): '+str(output),flush=True)
+    return output
+
 def export_bundle(number,a,s1,fh,output,reuse_a_onnx=None):
     if reuse_a_onnx is not None and not Path(reuse_a_onnx).is_file():
         raise FileNotFoundError('재사용할 A ONNX 파일이 없습니다: '+str(reuse_a_onnx))
@@ -183,8 +237,7 @@ def export_bundle(number,a,s1,fh,output,reuse_a_onnx=None):
     del engine,ns,coarse,context,x,fine_args
     print('대퇴골두 → ONNX / 수치 비교',flush=True)
     engine=FemoralEngine(fh,device);ns=engine.ns
-    keys=('COARSE_SIZE','FINE_SIZE','CROP_TOP_RATIO','ROI_PROPOSAL_THRESHOLD','ROI_MARGIN','COUNT_CONFIDENCE','MIN_REGION_FRACTION','ALLOW_SINGLE_CENTER_AS_HC')
-    manifest['fh']={k:ns[k] for k in keys};manifest['fh']['threshold']=engine.threshold
+    manifest['fh']=femoral_settings(engine)
     manifest['provenance']['fh']=engine.identity
     for stage in ('coarse','fine'):
         name='fh_'+stage;x=image(1,3,ns[stage.upper()+'_SIZE'],ns[stage.upper()+'_SIZE'])

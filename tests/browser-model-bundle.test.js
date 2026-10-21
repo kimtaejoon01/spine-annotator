@@ -34,3 +34,10 @@ test('browser corners keep duplicate candidate polygons separate for both method
  assert.equal(out[0].validation,'direct_duplicate_or_unsupported_labels')
  for(const m of ['v1','v2']){assert.ok(out[1][m].SA[1]>out[0][m].SA[1]);for(const r of out)for(const p of ['SA','SP','IA','IP'])assert.equal(r[m][p].length,2)}
 })
+test('FH v3 requires its saved inference settings; old v2 bundles remain supported',()=>{
+ const {m}=bundle();validateManifest(m)
+ m.fh={version:'v3'};assert.throws(()=>validateManifest(m),/TTA/)
+ m.fh={version:'v3',TTA_FLIP:true,SUPERIMPOSED_DIST_RATIO:.15,EDGE_FIT_EXCLUDE_PX:2,MIN_ARC_COVERAGE:.6,NONCIRCULAR_ERR:.12}
+ validateManifest(m)
+ m.fh.version='v4';assert.throws(()=>validateManifest(m),/버전/)
+})

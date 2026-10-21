@@ -13,7 +13,8 @@ export function initIntegratedAI({state,onApplied}){
     url.searchParams.set('opener',location.origin)
     const snapshot=current(),requestId=crypto.randomUUID(),win=window.open(url.toString(),'spine-ai-analysis')
     if(!win){alert('분석 창이 차단되었습니다. 팝업을 허용해 주세요.');return}
-    active={...snapshot,requestId,win,origin:url.origin,blob:null,sha256:null,ready:false,sent:false}
+    const groundTruth=structuredClone({filename:snapshot.filename,width:snapshot.width,height:snapshot.height,polygons:state.annotator.getPolygons(),landmarks:state.annotator.getLandmarks?.()||[]})
+    active={...snapshot,groundTruth,requestId,win,origin:url.origin,blob:null,sha256:null,ready:false,sent:false}
     const task=active
     button.disabled=true
     try{
@@ -24,7 +25,7 @@ export function initIntegratedAI({state,onApplied}){
   }
   function send(){
     if(!active?.ready||!active.blob||active.sent)return
-    active.win.postMessage({type:'spine-ai:image',requestId:active.requestId,filename:active.filename,blob:active.blob},active.origin);active.sent=true
+    active.win.postMessage({type:'spine-ai:image',requestId:active.requestId,filename:active.filename,blob:active.blob,groundTruth:active.groundTruth},active.origin);active.sent=true
   }
   window.addEventListener('message',e=>{
     if(!active||e.source!==active.win||e.origin!==active.origin)return

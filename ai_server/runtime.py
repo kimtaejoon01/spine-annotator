@@ -16,12 +16,14 @@ from scipy import ndimage as ndi
 from scipy.signal import find_peaks
 from scipy.optimize import least_squares
 from skimage.segmentation import watershed
+from skimage import measure
 
 SOURCE_DIR=Path(__file__).parent/"sources"
 SPINE_SOURCE=(SOURCE_DIR/'spine_source.py').read_text(encoding="utf-8")
 WATERSHED_SOURCE=(SOURCE_DIR/'watershed_source.py').read_text(encoding="utf-8")
 CORNER_SOURCE=(SOURCE_DIR/'corner_source.py').read_text(encoding="utf-8")
 FH_SOURCE=(SOURCE_DIR/'fh_source.py').read_text(encoding="utf-8")
+FH_V3_SOURCE=(SOURCE_DIR/'fh_v3_source.py').read_text(encoding="utf-8")
 S1_SOURCE=(SOURCE_DIR/'s1_source.py').read_text(encoding="utf-8")
 
 # Inference adapters. All model namespaces are isolated to preserve preprocessing/settings.
@@ -139,12 +141,15 @@ class SpineEngine:
 class FemoralEngine:
     def __init__(self,run,device):
         self.run=normalize_path(run);cfg=read_json(self.run/'config.json')
-        ns=dict(np=np,torch=torch,nn=nn,F=F,smp=smp,Image=Image,Path=Path,math=math,ndi=ndi,least_squares=least_squares,
+        self.version=cfg.get('version','v2')
+        if self.version not in ('v2','v3'):raise ValueError('지원하지 않는 FH 버전: '+str(self.version))
+        ns=dict(np=np,torch=torch,nn=nn,F=F,smp=smp,Image=Image,Path=Path,math=math,ndi=ndi,measure=measure,least_squares=least_squares,
                 DEVICE=device,COARSE_SIZE=int(cfg['coarse_size']),FINE_SIZE=int(cfg['fine_size']))
         defaults=dict(CROP_TOP_RATIO=.40,ROI_PROPOSAL_THRESHOLD=.20,ROI_MARGIN=1.8,COUNT_CONFIDENCE=.60,
                       MIN_REGION_FRACTION=.0005,ALLOW_SINGLE_CENTER_AS_HC=False)
+        if self.version=='v3':defaults.update(TTA_FLIP=True,SUPERIMPOSED_DIST_RATIO=.15,EDGE_FIT_EXCLUDE_PX=2.,MIN_ARC_COVERAGE=.60,NONCIRCULAR_ERR=.12)
         ns.update({k:cfg.get(k,v) for k,v in defaults.items()})
-        exec(FH_SOURCE,ns)
+        exec(FH_V3_SOURCE if self.version=='v3' else FH_SOURCE,ns)
         for stage in ('coarse','fine'):
             model=ns['build'](stage,weights=None)
             ck=torch.load(self.run/(stage+'_best.pt'),map_location='cpu',weights_only=False)
@@ -153,7 +158,7 @@ class FemoralEngine:
         self.threshold=float(read_json(self.run/'selected_threshold.json')['threshold'])
         if not 0<self.threshold<1:raise ValueError('FH threshold 설정 오류')
         self.ns=ns
-        self.identity=dict(run=str(self.run),threshold=self.threshold,
+        self.identity=dict(run=str(self.run),version=self.version,threshold=self.threshold,
             coarse_sha256=file_sha(self.run/'coarse_best.pt'),fine_sha256=file_sha(self.run/'fine_best.pt'))
 
     def predict(self,path):

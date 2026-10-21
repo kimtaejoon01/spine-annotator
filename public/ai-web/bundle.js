@@ -18,6 +18,13 @@ export function validateManifest(m){
   if(total>2*1024**3)throw Error('모델 묶음이 2 GB를 넘습니다.')
   const levels=['C2','C3','C4','C5','C6','C7',...Array.from({length:12},(_,i)=>'T'+(i+1)),...Array.from({length:5},(_,i)=>'L'+(i+1))]
   if(JSON.stringify(m.number?.levels)!==JSON.stringify(levels)||!Array.isArray(m.number?.feature_names)||!m.scaler||!m.a||!m.s1||!m.fh||!m.provenance)throw Error('모델 설정이 빠졌거나 C2–L5 번호 체계가 아닙니다.')
+  const fhVersion=m.fh.version??'v2'
+  if(!['v2','v3'].includes(fhVersion))throw Error('지원하지 않는 FH 버전')
+  if(fhVersion==='v3'){
+    if(typeof m.fh.TTA_FLIP!=='boolean')throw Error('FH v3 TTA 설정 누락')
+    for(const k of ['SUPERIMPOSED_DIST_RATIO','EDGE_FIT_EXCLUDE_PX','MIN_ARC_COVERAGE','NONCIRCULAR_ERR'])
+      if(!Number.isFinite(m.fh[k])||m.fh[k]<0)throw Error('FH v3 설정 오류: '+k)
+  }
   for(const key of ['mean','scale'])if(m.scaler[key]!==null&&(!Array.isArray(m.scaler[key])||m.scaler[key].length!==m.number.feature_names.length||!m.scaler[key].every(Number.isFinite)))throw Error('Geometry 정규화 설정 오류')
   return m
 }

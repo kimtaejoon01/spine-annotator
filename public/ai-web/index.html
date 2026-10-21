@@ -4,6 +4,7 @@
 <div class="eyebrow">X-RAY ANALYSIS</div><h1>한 장에서<br>전체 구조까지.</h1><p class="muted">척추 분할 · 번호 · 꼭지점<br>S1 상종판 · 대퇴골두</p>
 <label id="drop" class="drop"><span class="upload-icon">↑</span><strong>X-ray 선택</strong><span>파일 선택 또는 끌어 놓기</span><small>LAT · PNG / JPEG / TIFF / BMP</small><input id="upload" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.bmp" hidden></label>
 <div id="filename" class="filename">선택한 영상이 없습니다</div><p class="muted">영상은 서버에 전송하지 않습니다. 분석은 이 브라우저에서 실행됩니다.</p>
+<details open><summary>GT / 참조 라벨</summary><label class="field">GT JSON 불러오기<input id="gtUpload" type="file" accept=".json,application/json"></label><p id="gtStatus" class="muted">Annotator에 열어 둔 라벨을 자동으로 전달받거나 COCO / raw JSON을 선택하세요.</p><button id="gtClear" class="ghost">선택 JSON 해제</button><p class="muted">GT는 비교 표시용입니다. 분석이나 라벨 적용에는 사용하지 않습니다.</p></details>
 <label class="field">환자 전방 방향<select id="anterior"><option value="left">화면 왼쪽</option><option value="right">화면 오른쪽</option></select></label>
 <button id="run" class="primary" disabled>전체 분석</button>
 <button id="cancel" class="ghost" hidden>실행 중단</button><div class="progress"><div id="bar"></div></div><div id="status" role="status" aria-live="polite">모델 설정에서 학습된 모델을 불러오세요.</div>
@@ -12,7 +13,7 @@
 <div class="actions"><button id="apply" class="primary" hidden disabled>Annotator 편집 라벨로 적용</button><button id="download" class="secondary" disabled>결과 ZIP 다운로드</button><button id="json" class="ghost" disabled>좌표 JSON 다운로드</button></div>
 </aside><section class="workspace"><div class="workspace-head"><div><h2>분석 결과</h2><span class="muted">휠로 확대·축소 · 드래그로 이동</span></div><button id="fit" class="ghost">화면 맞춤</button></div>
 <div class="controls"><label>꼭지점 <select id="method"><option value="v2">Annotator v2</option><option value="v1">Annotator v1</option></select></label><div id="layers"></div></div>
-<div class="viewers"><div class="viewer"><div class="viewer-title">원본</div><canvas id="original" aria-label="원본 X-ray"></canvas></div><div class="viewer"><div class="viewer-title">AI 결과 <span id="decoder"></span></div><canvas id="overlay" aria-label="AI 오버레이"></canvas></div></div>
+<div class="viewers with-gt"><div class="viewer"><div class="viewer-title">원본</div><canvas id="original" aria-label="원본 X-ray"></canvas></div><div class="viewer"><div class="viewer-title"><span id="gtPaneStatus">GT 없음</span></div><canvas id="groundTruth" aria-label="GT 참조 라벨"></canvas></div><div class="viewer"><div class="viewer-title">AI 결과 <span id="decoder"></span></div><canvas id="overlay" aria-label="AI 오버레이"></canvas></div></div>
 <div id="empty" class="empty"><span>분석할 X-ray를 올려 주세요</span><small>원본과 같은 좌표에 결과를 표시합니다.</small></div>
 <div id="summary" class="summary"></div><section id="timings" class="timings" aria-label="단계별 소요 시간" hidden></section><div id="review" class="review" hidden></div>
 <details><summary>번호 · 모델 점수</summary><div id="table" class="table-wrap"></div></details>
@@ -28,8 +29,8 @@
 <label class="remember"><input id="remember" type="checkbox" checked> 이 브라우저에 모델 저장</label>
 <p class="muted">최초 실행에는 실행 환경을 내려받습니다. GPU 호환성과 출력값을 확인하고 필요한 단계는 CPU에서 실행합니다.</p>
 <button id="load" type="submit" class="primary" disabled>모델 불러오기</button><div id="setupStatus" role="status" aria-live="polite"></div>
-<details><summary>기존 .pt / .pth 모델 준비</summary><p class="muted">학습한 컴퓨터나 Colab에서 딱 한 번 브라우저용으로 변환합니다. 이후 사용자는 Python 설치 없이 이 페이지에서 모델을 선택하면 됩니다.</p><a href="./export_browser.ipynb" download>모델 변환용 Colab 노트북 받기</a><p class="muted">A 분할 · 척추 번호 · S1 · 대퇴골두 모델 폴더 4개를 지정합니다. 실제 학습 가중치는 아직 웹사이트에 포함되어 있지 않습니다.</p></details>
+<details><summary>기존 .pt / .pth 모델 준비</summary><p class="muted">학습한 컴퓨터나 Colab에서 딱 한 번 브라우저용으로 변환합니다. 이후 사용자는 Python 설치 없이 이 페이지에서 모델을 선택하면 됩니다.</p><a href="./export_browser.ipynb" download>모델 변환용 Colab 노트북 받기</a><br><a href="./update_femoral.ipynb" download>FH v3만 교체하는 Colab 노트북 받기</a><p class="muted">A 분할 · 척추 번호 · S1 · 대퇴골두 모델 폴더 4개를 지정합니다. 실제 학습 가중치는 아직 웹사이트에 포함되어 있지 않습니다.</p></details>
 <button id="forget" type="button" class="ghost">이 브라우저에 저장된 모델 지우기</button>
 </form></dialog>
-<style>.back-link,a{color:var(--accent)}.model-choices{display:flex;gap:10px;margin-top:22px}.remember{display:flex;align-items:center;gap:8px;font-size:12px;margin:18px 0}#forget{margin-top:18px;font-size:12px}.back-link{font-size:12px}#cancel{margin-top:8px}#bundleInfo{overflow-wrap:anywhere}</style>
+<style>.viewers.with-gt{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:850px){.viewers.with-gt{overflow-x:auto;grid-template-columns:repeat(3,minmax(230px,1fr))}}.back-link,a{color:var(--accent)}.model-choices{display:flex;gap:10px;margin-top:22px}.remember{display:flex;align-items:center;gap:8px;font-size:12px;margin:18px 0}#forget{margin-top:18px;font-size:12px}.back-link{font-size:12px}#cancel{margin-top:8px}#bundleInfo{overflow-wrap:anywhere}</style>
 <script type="module" src="./app.js"></script></body></html>

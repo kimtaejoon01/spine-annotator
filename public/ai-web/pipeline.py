@@ -12,6 +12,7 @@ from scipy import ndimage as ndi
 from scipy.signal import find_peaks
 from scipy.optimize import least_squares
 from skimage.segmentation import watershed
+from skimage import measure
 
 OPS = json.loads(Path('/original_ops.json').read_text())
 MEAN = np.array([.485,.456,.406],np.float32)
@@ -37,7 +38,12 @@ def namespace(code,settings):
 
 class BrowserPipeline:
     def __init__(self,manifest):
-        if manifest.get('operator_source_sha256')!=OPS['source_sha256']:
+        version=manifest['fh'].get('version','v2')
+        if version not in ('v2','v3'):raise ValueError('지원하지 않는 FH 버전')
+        expected=OPS['source_sha256']
+        legacy={k:v for k,v in expected.items() if k!='fh_v3_source.py'}
+        compatible=manifest.get('operator_source_sha256')==expected or (version=='v2' and manifest.get('operator_source_sha256')==legacy)
+        if not compatible:
             raise ValueError('모델 변환기와 웹페이지의 전·후처리 버전이 다릅니다. 같은 버전의 변환기를 사용하세요.')
         self.meta=manifest;self.last=None;self.mask=None;self.fh_masks=None
         nc=manifest['number'];ac=manifest['a']
@@ -48,7 +54,7 @@ class BrowserPipeline:
         self.sp=namespace(OPS['spine']+'\n'+OPS['watershed'],n)
         seg={k:ac[v] for k,v in OPS['seg_key_map'].items()};seg.update(MAX_DYNAMIC_PATCHES=6,IMAGENET_MEAN=MEAN,IMAGENET_STD=STD)
         self.seg=namespace(OPS['seg'],seg)
-        self.fh=namespace(OPS['fh'],manifest['fh'])
+        self.fh=namespace(OPS['fh_v3' if version=='v3' else 'fh'],manifest['fh'])
         self.s1=namespace(OPS['s1'],manifest['s1'])
 
     async def segment(self,path):
@@ -129,18 +135,36 @@ class BrowserPipeline:
     async def model_crop(self,stage,gray,roi,size):
         s=self.fh;x0,y0,x1,y1=map(int,roi)
         image,_,_,info=s['letterbox'](gray[y0:y1,x0:x1],[],size)
-        out=await infer(stage,image=s['normalize'](image)[None])
-        restored=np.stack([s['undo_letterbox'](p,info) for p in out['probabilities'][0]])
-        return restored,out['count'][0] if 'count' in out else None
+        x=s['normalize'](image)[None]
+        out=await infer(stage,image=x);p=out['probabilities'];cp=out.get('count')
+        if self.meta['fh'].get('version')=='v3' and s['TTA_FLIP']:
+            flipped=await infer(stage,image=x[...,::-1].copy());pf=flipped['probabilities'][...,::-1]
+            if p.shape[1]==2:
+                direct=(p*pf).sum()/((p+pf-p*pf).sum()+1e-6)
+                sw=pf[:,::-1];swapped=(p*sw).sum()/((p+sw-p*sw).sum()+1e-6)
+                if swapped>direct:pf=sw
+            p=(p+pf)/2
+            if cp is not None:cp=(cp+flipped['count'])/2
+        restored=np.stack([s['undo_letterbox'](pp,info) for pp in p[0]])
+        return restored,cp[0] if cp is not None else None
 
-    async def femoral(self,path):
-        s=self.fh;gray=s['read_gray'](path);h,w=gray.shape;lower=[0,int(h*s['CROP_TOP_RATIO']),w,h]
+    async def coarse_proposal(self,gray,top_ratio):
+        s=self.fh;h,w=gray.shape;lower=[0,int(h*top_ratio),w,h]
         p,_=await self.model_crop('fh_coarse',gray,lower,s['COARSE_SIZE'])
         binary=p[0]>=s['ROI_PROPOSAL_THRESHOLD'];lab,n=ndi.label(binary);areas=np.bincount(lab.ravel());areas[0]=0
         ids=sorted(range(1,len(areas)),key=lambda i:areas[i],reverse=True)[:2]
         ids=[i for i in ids if areas[i]>=max(8,int(binary.size*s['MIN_REGION_FRACTION']))]
         full=np.zeros((h,w),bool);full[lower[1]:]=np.isin(lab,ids) if ids else False
-        roi=s['bbox_roi'](full);found=bool(ids)
+        if not ids and self.meta['fh'].get('version')=='v3':return lower,False
+        return s['bbox_roi'](full),bool(ids)
+
+    async def femoral(self,path):
+        s=self.fh;gray=s['read_gray'](path)
+        roi,found=await self.coarse_proposal(gray,s['CROP_TOP_RATIO'])
+        roi_source='lower' if found else 'fallback_lower_region'
+        if not found and self.meta['fh'].get('version')=='v3':
+            retry,found_retry=await self.coarse_proposal(gray,0.)
+            if found_retry:roi,found,roi_source=retry,True,'full_image_retry'
         prob,cp=await self.model_crop('fh_fine',gray,roi,s['FINE_SIZE'])
         circles,masks=s['circles_from_slots'](prob,s['threshold'],roi);outcome=s['hc_result'](circles,cp)
         if not found:outcome['review_reasons'].append('coarse_not_detected_fallback');outcome['HC_LAT']=None
@@ -148,13 +172,14 @@ class BrowserPipeline:
         polygons=[];contours=[]
         for i,c in enumerate(circles):
             t=np.arange(32)*2*np.pi/32;pts=np.column_stack([c['cx']+c['radius']*np.cos(t),c['cy']+c['radius']*np.sin(t)])
-            polygons.append(dict(id=f'ai_fh_lat_{i+1}',label='FH_LAT',shape='circle',source='ai_fh_v2',points=pts.ravel().tolist()))
+            polygons.append(dict(id=f'ai_fh_lat_{i+1}',label='FH_LAT',shape='circle',source='ai_fh_'+self.meta['fh'].get('version','v2'),points=pts.ravel().tolist()))
         for slot,mask in enumerate(masks):
             cs,_=cv2.findContours(mask.astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
             for c in cs:
                 if len(c)>=3:contours.append(dict(slot=slot,points=(c.reshape(-1,2)+roi[:2]).tolist()))
         return dict(image=Path(path).name,instances=circles,annotator_polygons=polygons,roi=list(map(int,roi)),
-                    coarse_found=found,threshold=s['threshold'],segmentation_contours=contours,**outcome),masks.astype(np.uint8)
+                    coarse_found=found,roi_source=roi_source,tta_flip=bool(s.get('TTA_FLIP',False)),
+                    version=self.meta['fh'].get('version','v2'),threshold=s['threshold'],segmentation_contours=contours,**outcome),masks.astype(np.uint8)
 
     def refresh(self):
         r=self.last

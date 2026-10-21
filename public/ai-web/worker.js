@@ -74,7 +74,7 @@ async function load(m){
   }
   manifest.browser_validation={providers,errors:results};py.globals.set('manifest_json',JSON.stringify(manifest))
   await py.runPythonAsync('pipeline = BrowserPipeline(json.loads(manifest_json))')
-  ready=true;report(100,'모델 준비 완료');return {providers,manifest:manifest.bundle_sha256}
+  ready=true;report(100,'모델 준비 완료');return {providers,manifest:manifest.bundle_sha256,fhVersion:manifest.fh.version??'v2'}
 }
 async function handle(m){
   if(m.type==='load')return load(m)
