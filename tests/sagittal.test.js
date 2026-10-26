@@ -48,9 +48,9 @@ test('parallel endplates keep a valid zero angle and no fake intersection',()=>{
   const f=fixture();f.points.C7_INF_ANT=[100,200];f.points.C7_INF_POST=[0,200];f.points.C2_INF_ANT=[100,100];f.points.C2_INF_POST=[0,100]
   close(result(f).CL.value,0);assert.equal(result(f).CL.angular.vertex,null)
 })
-test('GT measured landmarks take precedence over inferred corners, with explicit provenance',()=>{
+test('GT contours take precedence over stale corner landmarks, with explicit provenance',()=>{
   const gt={polygons:[{label:'C7',points:[[10,10],[50,10],[50,50],[10,50]]},{label:'S1_SUP',shape:'endplate',points:[[20,100],[60,120]]}],landmarks:[{label:'C7_INF_ANT',x:9,y:49}]}
-  const input=gtMeasurementInput(gt,{width:100,anteriorRight:false});assert.deepEqual(input.points.C7_INF_ANT,[9,49]);assert.equal(input.notes.C7_INF_ANT[0],'GT 저장 기준점')
+  const input=gtMeasurementInput(gt,{width:100,anteriorRight:false});assert.notDeepEqual(input.points.C7_INF_ANT,[9,49]);assert.match(input.notes.C7_INF_ANT[0],/GT 윤곽/)
   assert.match(input.notes.C7_INF_POST[0],/추정/);assert.deepEqual(input.points.S1_SUP_POST,[60,120]);assert.deepEqual(input.points.C7_CENTER,[30,30])
   gt.polygons.push(structuredClone(gt.polygons[0]));assert.match(gtMeasurementInput(gt,{width:100}).errors.C7_INF_ANT,/중복/)
 })

@@ -35,15 +35,22 @@ function circleCenter(p){
 }
 export function gtMeasurementInput(gt,{width,anteriorRight=false,method='v2'}={}){
   if(!gt)return {points:{}}
-  const out=makeInput(gt.landmarks),polys=gt.polygons??[],counts={}
+  const polys=gt.polygons??[],counts={}
   for(const p of polys)if(level.test(p.label))counts[p.label]=(counts[p.label]??0)+1
+  // Saved corner names can predate polygon relabeling. Never combine those
+  // coordinates with the current labeled contour or mix two sources per plate.
+  // Compare GT and AI using v1/v2 on their respective vertebral contours.
+  const out=makeInput((gt.landmarks??[]).filter(p=>{
+    const match=/^((?:C[2-7]|T(?:[1-9]|1[0-2])|L[1-5]))_(?:SUP_(?:ANT|POST)|INF_(?:ANT|POST)|CENTER)$/.exec(p.label)
+    return !match||!counts[match[1]]
+  }))
   const candidates=polys.filter(p=>level.test(p.label)&&counts[p.label]===1&&p.points.length>=4).map((p,i)=>({candidate_index:i,label:p.label,points:p.points.map(([x,y])=>[anteriorRight?x:width-1-x,y])}))
   const put=(key,p,note)=>{if(!(key in out.points)&&validPoint(p)){out.points[key]=p;out.notes[key]=[note]}}
   if(candidates.length){
     try{for(const r of JSON.parse(cornerCompare(JSON.stringify({candidates,validate:true})))){
       const fit=r[method]??{}
       for(const [k,v] of Object.entries(suffix))if(validPoint(fit[k]))put(r.label+'_'+v,[anteriorRight?fit[k][0]:width-1-fit[k][0],fit[k][1]],'GT 윤곽에서 '+method+' 꼭지점 추정'+(fit.quality==='review'?' · 확인 필요':''))
-    }}catch{/* Explicit landmarks remain usable if contour fitting fails. */}
+    }}catch{/* Landmark-only levels remain usable; never restore stale contour-level points. */}
   }
   for(const p of polys)if(level.test(p.label)&&counts[p.label]===1)put(p.label+'_CENTER',centroid(p.points),'GT 윤곽의 면적 중심')
   for(const [l,n] of Object.entries(counts))if(n>1)for(const k of [...Object.values(suffix),'CENTER'])out.errors[l+'_'+k]='중복 GT 척추: '+l

@@ -226,7 +226,7 @@ function paint(canvas,mode){
   const w=s.imageSize?.width||s.image.naturalWidth,h=s.imageSize?.height||s.image.naturalHeight
   const scale=Math.min(rect.width/w,rect.height/h)*s.zoom;c.translate((rect.width-w*scale)/2+s.panX,(rect.height-h*scale)/2+s.panY);c.scale(scale,scale)
   c.drawImage(s.image,0,0,w,h)
-  if(mode==='groundTruth'){paintGroundTruth(c,gt,scale);if($('measurementLines').checked)paintMeasurement(c,measurementData.gt.find(m=>m.id===measurementUI.selected()),{scale,width:w,height:h});return}
+  if(mode==='groundTruth'){paintGroundTruth(c,gt,scale,{contourMeasurements:true});if($('measurementLines').checked)paintMeasurement(c,measurementData.gt.find(m=>m.id===measurementUI.selected()),{scale,width:w,height:h});return}
   if(mode!=='overlay'||!s.result)return
   const r=s.result,stroke=1.4/scale,dot=2.7/scale,fs=11/scale;c.lineWidth=stroke;c.lineJoin='round';c.font=`${fs}px sans-serif`
   const line=(p,color,closed=false,fill=false)=>{if(!p?.length)return;c.beginPath();p.forEach((pt,i)=>i?c.lineTo(...pt):c.moveTo(...pt));if(closed)c.closePath();if(fill){c.fillStyle=color+'38';c.fill()}c.strokeStyle=color;c.stroke()}

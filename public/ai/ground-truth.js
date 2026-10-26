@@ -120,11 +120,15 @@ export function prepareGroundTruth(gt,width,height){
   }
   return gt
 }
-export function paintGroundTruth(c,gt,scale){
+export function paintGroundTruth(c,gt,scale,{contourMeasurements=false}={}){
   if(!gt)return
   const color='#71e2c4',font=11/scale;c.lineWidth=1.5/scale;c.strokeStyle=color;c.fillStyle=color;c.font=`${font}px sans-serif`
   const tag=(x,y,text)=>{c.fillStyle='#0b1421db';c.fillRect(x,y-font,c.measureText(text).width+4/scale,font+3/scale);c.fillStyle=color;c.fillText(text,x,y)}
   for(const m of gt.masks)c.drawImage(m.canvas,0,0)
   for(const p of gt.polygons){c.beginPath();p.points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));if(p.closed)c.closePath();c.stroke();if(/^(C[2-7]|T([1-9]|1[0-2])|L[1-5])$/.test(p.label))tag(...p.points[0],p.label)}
-  for(const p of gt.landmarks){c.beginPath();c.arc(p.x,p.y,2.5/scale,0,2*Math.PI);c.fillStyle=color;c.fill()}
+  const contourLevels=new Set(gt.polygons.map(p=>p.label))
+  for(const p of gt.landmarks){
+    const match=/^((?:C[2-7]|T(?:[1-9]|1[0-2])|L[1-5]))_(?:SUP_(?:ANT|POST)|INF_(?:ANT|POST)|CENTER)$/.exec(p.label)
+    if(contourMeasurements&&match&&contourLevels.has(match[1]))continue
+    c.beginPath();c.arc(p.x,p.y,2.5/scale,0,2*Math.PI);c.fillStyle=color;c.fill()}
 }
