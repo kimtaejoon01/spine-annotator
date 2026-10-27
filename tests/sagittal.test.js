@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {calculateSagittal,intersection,angle} from '../public/ai/sagittal.js'
 import {aiMeasurementInput,gtMeasurementInput} from '../public/ai-web/measurement-input.js'
+import {resolveGroundTruth} from '../public/ai/ground-truth.js'
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-7,`${a} != ${b}`)
 const rad=d=>d*Math.PI/180
 function fixture(){
@@ -54,11 +55,28 @@ test('GT contours take precedence over stale corner landmarks, with explicit pro
   assert.match(input.notes.C7_INF_POST[0],/추정/);assert.deepEqual(input.points.S1_SUP_POST,[60,120]);assert.deepEqual(input.points.C7_CENTER,[30,30])
   gt.polygons.push(structuredClone(gt.polygons[0]));assert.match(gtMeasurementInput(gt,{width:100}).errors.C7_INF_ANT,/중복/)
 })
-test('GT uses two explicit circles for HC, never arbitrary segmentation contours or one circle',()=>{
+test('GT recovers FH centers with or without circle metadata, overriding stale HC',()=>{
   const circle=cx=>({label:'FH_LAT',shape:'circle',points:Array.from({length:32},(_,i)=>[cx+20*Math.cos(i*Math.PI/16),200+20*Math.sin(i*Math.PI/16)])})
   const gt={polygons:[circle(100),circle(150)],landmarks:[]}
   const p=gtMeasurementInput(gt,{width:300}).points.HC_LAT;close(p[0],125);close(p[1],200)
-  delete gt.polygons[0].shape;assert.equal(gtMeasurementInput(gt,{width:300}).points.HC_LAT,undefined)
+  delete gt.polygons[0].shape
+  gt.landmarks.push({label:'HC_LAT',x:0,y:0})
+  assert.deepEqual(gtMeasurementInput(gt,{width:300}).points.HC_LAT,p)
+  gt.polygons.pop();assert.equal(gtMeasurementInput(gt,{width:300}).points.HC_LAT,undefined)
+})
+test('COCO FH circle polygons provide PT, PI and TPA without a separate HC annotation',()=>{
+  const f=fixture(),[hx,hy]=f.points.HC_LAT
+  const circle=cx=>Array.from({length:32},(_,i)=>[cx+20*Math.cos(i*Math.PI/16),hy+20*Math.sin(i*Math.PI/16)]).flat()
+  const data={images:[{id:1,file_name:'case.png',width:1200,height:1500}],categories:[{id:28,name:'FH_LAT'}],annotations:[hx-30,hx+30].map((cx,i)=>({id:i+1,image_id:1,category_id:28,segmentation:[circle(cx)]})),landmarks:Object.entries(f.points).filter(([label])=>label!=='HC_LAT').map(([label,[x,y]])=>({image_id:1,label,x,y}))}
+  const gt=resolveGroundTruth(data,'case.png',1200,1500)
+  const input=gtMeasurementInput(gt,{width:1200,anteriorRight:true})
+  close(input.points.HC_LAT[0],hx);close(input.points.HC_LAT[1],hy)
+  const actual=result(input),expected=result(f)
+  for(const id of ['PT','PI','TPA']){assert.equal(actual[id].available,true);close(actual[id].value,expected[id].value)}
+  gt.polygons[0].points=[[0,0],[10,0],[20,0]]
+  assert.equal(result(gtMeasurementInput(gt,{width:1200})).PT.available,false)
+  gt.polygons[0].points=[[0,0],[40,0],[40,10],[20,15],[0,10]]
+  assert.equal(result(gtMeasurementInput(gt,{width:1200})).PT.available,false)
 })
 test('AI withheld HC and repeated vertebral numbers remain unavailable for measurement',()=>{
   const r={schema_version:'spine-unified-ui-1',image:{width:100,height:200},anterior_right:false,spine:{polygons:[{points:[[10,10],[50,10],[50,50],[10,50]]}],numbering:[{input_index:0,final_level:'C7'}],corners:[]},s1:{status:'predicted',points:[[20,100],[60,120]]},femoral:{instances:[{cx:30,cy:160,radius:10},{cx:50,cy:160,radius:10}],HC_LAT:null}}
