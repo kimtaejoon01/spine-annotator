@@ -39,6 +39,7 @@ export class SpineAnnotator {
     // 오버레이 표시 상태
     this.aiMaskNodes = []
     this.aiMaskOpacity = 0.45
+    this.s1EndplateVisible = true
     this.humanLabelVisible = true
     this.labelOverlayVisible = true
     this.aiMaskOverlayVisible = true
@@ -423,6 +424,15 @@ export class SpineAnnotator {
   // ============================================================
   // 오버레이 표시 / AI mask
   // ============================================================
+  setS1EndplateVisible(visible) {
+    this.s1EndplateVisible = visible !== false
+    if (!this.s1EndplateVisible && this.polygons.some(p => p.id === this.selectedId && p.label === 'S1_SUP')) {
+      this.selectedId = null
+      this.clearEditHover()
+    }
+    this.renderPolygons()
+  }
+
   setHumanLabelVisible(visible) {
     this.humanLabelVisible = visible !== false
     window.__spineHumanLabelVisible = this.humanLabelVisible
@@ -996,7 +1006,10 @@ export class SpineAnnotator {
     if (!pos) return
 
     const poly = this.polygons.find(p => p.id === this.selectedId)
-    if (!poly) return
+    if (!poly || (this.s1EndplateVisible === false && poly.label === 'S1_SUP')) {
+      this.clearEditHover()
+      return
+    }
 
     // 화면 기준 임계값 (스케일 보정 → 이미지 좌표계)
     const scale = this.stage.scaleX()
@@ -1455,6 +1468,8 @@ export class SpineAnnotator {
     this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
 
     this.polygons.forEach(poly => {
+      // Display only: retain the original annotation for saving and export.
+      if (this.s1EndplateVisible === false && poly.label === 'S1_SUP') return
       const color = getRegionColor(poly.label)
       const isSelected = poly.id === this.selectedId
 
