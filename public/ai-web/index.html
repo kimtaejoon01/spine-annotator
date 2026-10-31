@@ -1,0 +1,42 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Spine Annotator · AI 분석</title><link rel="stylesheet" href="../ai/style.css"></head>
+<body><header><div class="brand"><span class="mark">S</span><div><strong>Spine Annotator</strong><small>브라우저 AI 분석 · 내 컴퓨터에서 실행</small></div></div><a href="/annotate" class="back-link">Annotator</a><span id="connection" class="pill">모델 준비 전</span><button id="setupToggle" class="ghost">모델 설정</button></header>
+<main><aside>
+<div class="eyebrow">X-RAY ANALYSIS</div><h1>한 장에서<br>전체 구조까지.</h1><p class="muted">척추 분할 · 번호 · 꼭지점<br>S1 상종판 · 대퇴골두</p>
+<label id="drop" class="drop"><span class="upload-icon">↑</span><strong>X-ray 선택</strong><span>파일 선택 또는 끌어 놓기</span><small>LAT · PNG / JPEG / TIFF / BMP</small><input id="upload" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.bmp" hidden></label>
+<div id="filename" class="filename">선택한 영상이 없습니다</div><p class="muted">영상은 서버에 전송하지 않습니다. 분석은 이 브라우저에서 실행됩니다.</p>
+<details open><summary>GT / 참조 라벨</summary><label class="field">GT JSON 불러오기<input id="gtUpload" type="file" accept=".json,application/json"></label><p id="gtStatus" class="muted">영상 파일명으로 서버 저장 라벨을 자동 조회합니다. COCO / raw GT JSON도 선택할 수 있습니다.</p><button id="gtClear" class="ghost">선택 JSON 해제</button><button id="gtReload" class="ghost">서버 GT 다시 불러오기</button><button id="gtUseCoordinates" class="secondary" hidden>같은 원본 영상입니다 · 원본 좌표로 표시</button><p class="muted">서버 GT 조회에는 파일명만 사용하며 영상은 전송하지 않습니다. GT는 비교 표시용이며 분석이나 라벨 적용에는 사용하지 않습니다.</p></details>
+<label class="field">환자 전방 방향<select id="anterior"><option value="left">화면 왼쪽</option><option value="right">화면 오른쪽</option></select></label>
+<button id="run" class="primary" disabled>전체 분석</button>
+<button id="cancel" class="ghost" hidden>실행 중단</button><div class="progress"><div id="bar"></div></div><div id="status" role="status" aria-live="polite">모델 설정에서 학습된 모델을 불러오세요.</div>
+<ol class="steps"><li>척추 분할 + watershed</li><li>번호 + 4개 꼭지점</li><li>L5 기반 S1 종판</li><li>대퇴골두 + 중심</li></ol>
+<details id="l5Panel"><summary>L5 확인 · S1 재계산</summary><p class="muted">L5가 없거나 중복되면 후보를 지정하세요. 선택해도 척추 번호 자체는 바뀌지 않습니다.</p><select id="l5"><option value="">분석 후 선택 가능</option></select><button id="s1" class="secondary" disabled>S1만 다시 계산</button></details>
+<div class="actions"><button id="apply" class="primary" hidden disabled>Annotator 편집 라벨로 적용</button><button id="download" class="secondary" disabled>결과 ZIP 다운로드</button><button id="json" class="ghost" disabled>좌표 JSON 다운로드</button></div>
+</aside><section class="workspace"><div class="workspace-head"><div><h2>분석 결과</h2><span class="muted">휠로 확대·축소 · 드래그로 이동</span></div><button id="fit" class="ghost">화면 맞춤</button></div>
+<div class="controls"><label>꼭지점 <select id="method"><option value="v2">Annotator v2</option><option value="v1">Annotator v1</option></select></label><div id="layers"></div></div>
+<section class="measurements" aria-label="시상 정렬 지표"><h3>시상 정렬 지표 · 선택하면 측정선을 표시합니다</h3>
+<div class="measurement-options"><label><input id="measurementLines" type="checkbox" checked> 측정선 · 연장선 · 각도 표시</label><label>SVA 길이 보정 <input id="pixelSpacing" type="number" min="0.000001" step="any" placeholder="미입력" aria-label="원본 영상 mm per pixel"> mm/px</label></div>
+<p class="muted">길이 보정은 원본 영상의 알려진 값을 입력하세요. 미입력 시 SVA는 px입니다. 각도는 정사각형 픽셀을 기준으로 계산합니다.</p>
+<p class="muted">GT 척추 지표는 현재 GT 윤곽에서 선택한 v1/v2로 추출합니다. 같은 척추의 별도 저장 꼭지점은 사용하지 않습니다.</p>
+<div id="measurementCards" class="metric-cards"></div><p id="measurementDefinition" class="measurement-definition"></p><p id="measurementError" role="status" hidden></p></section>
+<div class="viewers with-gt"><div class="viewer"><div class="viewer-title">원본</div><canvas id="original" aria-label="원본 X-ray"></canvas></div><div class="viewer"><div class="viewer-title"><span id="gtPaneStatus">GT 없음</span></div><canvas id="groundTruth" aria-label="GT 참조 라벨"></canvas></div><div class="viewer"><div class="viewer-title">AI 결과 <span id="decoder"></span></div><canvas id="overlay" aria-label="AI 오버레이"></canvas></div></div>
+<div id="empty" class="empty"><span>분석할 X-ray를 올려 주세요</span><small>원본과 같은 좌표에 결과를 표시합니다.</small></div>
+<div id="measurementDetail" class="metric-detail"></div>
+<div id="summary" class="summary"></div><section id="timings" class="timings" aria-label="단계별 소요 시간" hidden></section><div id="review" class="review" hidden></div>
+<details><summary>번호 · 모델 점수</summary><div id="table" class="table-wrap"></div></details>
+<p class="footnote">색은 구조를 구분합니다. 정답/오답 표시가 아닙니다. FH1/FH2는 모델 출력 순서이며 해부학적 좌/우 구분이 아닙니다.</p>
+</section></main>
+<dialog id="setup"><form id="setupForm"><div class="dialog-head"><h2>이 컴퓨터에서 AI 실행</h2><button type="button" id="closeSetup" class="ghost" aria-label="닫기">닫기</button></div>
+<p class="muted">모델을 한 번 불러오면 X-ray만 선택해서 분석할 수 있습니다. 별도 프로그램 설치나 서버 연결은 필요하지 않습니다.</p>
+<div class="model-choices"><button id="builtin" type="button" class="secondary" disabled>기본 모델 확인 중</button><button id="restore" type="button" class="secondary" disabled>저장된 모델 사용</button></div>
+<label class="field">내 모델 폴더 선택<input id="bundleFolder" type="file" webkitdirectory multiple></label>
+<details><summary>폴더 선택을 지원하지 않는 브라우저</summary><label class="field">변환 결과 파일 모두 선택<input id="bundleFiles" type="file" multiple accept=".json,.onnx,.npz"></label></details>
+<div id="bundleInfo" class="muted">브라우저용 모델 폴더를 선택하세요.</div>
+<label class="field">계산 장치<select id="device"><option value="auto">자동 · GPU 사용 가능 여부 확인</option><option value="wasm">CPU 사용</option></select></label>
+<label class="remember"><input id="remember" type="checkbox" checked> 이 브라우저에 저장 · 다음 접속 시 자동 불러오기</label>
+<p class="muted">최초 실행에는 실행 환경을 내려받습니다. GPU 호환성과 출력값을 확인하고 필요한 단계는 CPU에서 실행합니다.</p>
+<button id="load" type="submit" class="primary" disabled>모델 불러오기</button><div id="setupStatus" role="status" aria-live="polite"></div>
+<details><summary>기존 .pt / .pth 모델 준비</summary><p class="muted">학습한 컴퓨터나 Colab에서 딱 한 번 브라우저용으로 변환합니다. 이후 사용자는 Python 설치 없이 이 페이지에서 모델을 선택하면 됩니다.</p><a href="./export_browser.ipynb" download>모델 변환용 Colab 노트북 받기</a><br><a href="./update_femoral.ipynb" download>기존 변환 파일 없이 FH v3 포함 전체 모델 만들기</a><p class="muted">A 분할 · 척추 번호 · S1 · 대퇴골두 모델 폴더 4개를 지정합니다. 실제 학습 가중치는 아직 웹사이트에 포함되어 있지 않습니다.</p></details>
+<button id="forget" type="button" class="ghost">이 브라우저에 저장된 모델 지우기</button>
+</form></dialog>
+<style>.viewers.with-gt{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:850px){.viewers.with-gt{overflow-x:auto;grid-template-columns:repeat(3,minmax(230px,1fr))}}.back-link,a{color:var(--accent)}.model-choices{display:flex;gap:10px;margin-top:22px}.remember{display:flex;align-items:center;gap:8px;font-size:12px;margin:18px 0}#forget{margin-top:18px;font-size:12px}.back-link{font-size:12px}#cancel{margin-top:8px}#bundleInfo{overflow-wrap:anywhere}</style>
+<script type="module" src="./app.js"></script></body></html>

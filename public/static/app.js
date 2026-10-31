@@ -11,6 +11,7 @@ import { initNotesModule, loadCurrentNote as loadCurrentNoteFromModule } from '.
 import { initVisibilityControls, refreshVisibilityControls } from './modules/visibility.js'
 import { initPreprocessUI } from './preprocess-ui.js'
 import { initAutoEndplateUI } from './auto-endplate-ui.js'
+import { initIntegratedAI } from './integrated-ai.js'
 import {
   ACTIONS,
   normalizeKey,
@@ -221,6 +222,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   })
   window.__spineAnnotator = state.annotator
   window.__spineState = state
+  initIntegratedAI({ state, onApplied: () => {
+    state.landmarkApi?.refresh?.()
+    refreshSagittalMeasurements()
+    autoSave()
+  } })
 
   // 전처리 뷰 UI 초기화 (프리셋 토글 + 파라미터 패널)
   try { initPreprocessUI(state.annotator) } catch (e) { console.error('preprocess UI init 실패', e) }
