@@ -1332,14 +1332,29 @@ export class SpineAnnotator {
   // 자동 라벨 할당 (Y좌표 위→아래)
   // ============================================================
   relabelAll() {
-    const autoPolygons = this.polygons.filter(p => !p.manualLabel && (!p.label || isSpineLabel(p.label) || String(p.label).startsWith('?')))
-    autoPolygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
-    autoPolygons.sort((a, b) => a._centroidY - b._centroidY)
-    const labels = generateLabels(this.startLabel, autoPolygons.length)
-    autoPolygons.forEach((p, i) => { p.label = labels[i] })
-
+    // Existing labels are annotations, not disposable sequence indices.
+    // Adding/deleting a polygon must not close intentional gaps or renumber saved work.
     this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
     this.polygons.sort((a, b) => a._centroidY - b._centroidY)
+    const spine = this.polygons.filter(p => LABELS.includes(p.label) || !p.label || String(p.label).startsWith('?'))
+    const used = new Set(spine.map(p => p.label).filter(label => LABELS.includes(label)))
+    for (let i = 0; i < spine.length; i++) {
+      const p = spine[i]
+      if (p.manualLabel || LABELS.includes(p.label)) continue
+      const above = spine.slice(0, i).reverse().find(q => LABELS.includes(q.label))
+      const below = spine.slice(i + 1).find(q => LABELS.includes(q.label))
+      let index = above ? LABELS.indexOf(above.label) + 1 : Math.max(0, LABELS.indexOf(this.startLabel))
+      // When inserting above existing annotations, use the immediate available predecessor.
+      if (!above && below) {
+        const blanks = spine.slice(i, spine.indexOf(below)).filter(q => !LABELS.includes(q.label)).length
+        index = LABELS.indexOf(below.label) - blanks
+      }
+      const limit = below ? LABELS.indexOf(below.label) : LABELS.length
+      while (index >= 0 && index < limit && used.has(LABELS[index])) index++
+      const label = index >= 0 && index < limit ? LABELS[index] : null
+      p.label = label || '?'
+      if (label) used.add(label)
+    }
   }
   setStartLabel(label) {
     this.startLabel = label
@@ -1420,7 +1435,8 @@ export class SpineAnnotator {
       return
     }
     poly.label = newLabel
-    this.normalizeVertebraLabelsByY({ anchorId: id, anchorLabel: newLabel, force: true })
+    poly.manualLabel = true
+    // A dropdown edit changes this annotation only; preserve gaps and other labels.
     this.renderPolygons()
     this.pushHistory()
     this.notifyPolygons()
@@ -1888,7 +1904,6 @@ export class SpineAnnotator {
     const hasMissingLabel = this.polygons.some(p => !p.label || p.label === '?')
     if (hasMissingLabel) {
       this.relabelAll()
-      this.normalizeVertebraLabelsByY({ force: false })
     } else {
       // 재지정 없이 시각적 위→아래 순서로만 정렬 (의도적 비연속 라벨 보존)
       this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })

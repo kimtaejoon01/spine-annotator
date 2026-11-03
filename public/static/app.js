@@ -1540,27 +1540,8 @@ function installPelvisRuntimeFinalFixes() {
     if (typeof this.updateStatus === 'function') this.updateStatus()
   }
 
-  const originalRelabelAll = typeof a.relabelAll === 'function' ? a.relabelAll.bind(a) : null
-  a.relabelAll = function() {
-    try {
-      const startIdx = Math.max(0, LABELS.indexOf(this.startLabel || 'C2'))
-      const autoPolygons = (this.polygons || []).filter(p => {
-        if (!p) return false
-        if (p.manualLabel === true) return false
-        if (isFinalPelvisLabel(p.label)) return false
-        return true
-      })
-      autoPolygons.forEach(p => { p._centroidY = computeSimpleCentroidYFinal(p.points) })
-      autoPolygons.sort((x, y) => x._centroidY - y._centroidY)
-      autoPolygons.forEach((p, i) => {
-        p.label = LABELS[startIdx + i] || '?'
-      })
-      ;(this.polygons || []).forEach(p => { p._centroidY = computeSimpleCentroidYFinal(p.points) })
-      ;(this.polygons || []).sort((x, y) => x._centroidY - y._centroidY)
-    } catch (err) {
-      if (originalRelabelAll) originalRelabelAll()
-    }
-  }
+  // Numbering is handled by SpineAnnotator.relabelAll. Do not override it
+  // with a counter over non-manual polygons: that destroys gaps and anchors.
 
   const originalAddPoint = typeof a.addPoint === 'function' ? a.addPoint.bind(a) : null
   if (originalAddPoint) {
