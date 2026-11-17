@@ -50,8 +50,11 @@ for(const id of ['showOriginal','showExpert','showEndplate'])$(id).onchange=draw
 function nearest(p){let best=null,dmin=12;for(const [group,pts] of [['polygon',polygon],['endplate',endplate]])for(let i=0;i<pts.length;i++){const a=screen(pts[i]),b=screen(p),d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(d<dmin){dmin=d;best={group,i}}}return best}
 function nearestEdge(p){if(polygon.length<2)return null;const q=screen(p);let best=null,min=11;for(let i=0;i<polygon.length;i++){const a=screen(polygon[i]),b=screen(polygon[(i+1)%polygon.length]);const vx=b[0]-a[0],vy=b[1]-a[1],t=Math.max(0,Math.min(1,((q[0]-a[0])*vx+(q[1]-a[1])*vy)/(vx*vx+vy*vy||1)));const d=Math.hypot(q[0]-a[0]-t*vx,q[1]-a[1]-t*vy);if(d<min){min=d;best=i}}return best}
 function removeVertex(hit){if(!hit)return false;const arr=hit.group==='polygon'?polygon:endplate;if(!arr[hit.i])return false;remember();arr.splice(hit.i,1);if(hit.group==='polygon'&&arr.length<3)polygon=[];draw();return true}
-function eraseLast(){if(draft.length){remember();draft.pop();draw();return}if(endplate.length===1&&mode==='endplate'){remember();endplate.pop();draw();return}if(polygon.length){remember();polygon=[];draw();status('S1 폴리곤을 삭제했습니다. 기존 폴리곤은 유지됩니다.');return}if(endplate.length){remember();endplate=[];draw()}}
-function finishAngular(){if(draft.length<3){status('폴리곤에는 3개 이상의 점이 필요합니다.');return}const mid=[draft.reduce((n,p)=>n+p[0],0)/draft.length,draft.reduce((n,p)=>n+p[1],0)/draft.length];remember();polygon=[...draft].sort((a,b)=>Math.atan2(a[1]-mid[1],a[0]-mid[0])-Math.atan2(b[1]-mid[1],b[0]-mid[0]));draft=[];draw()}
+function eraseLast(){
+  if(draft.length){remember();draft.pop();draw();return}
+  if(mode==='endplate' && endplate.length===1){remember();endplate.pop();draw();return}
+  status('취소할 마지막 점이 없습니다. E는 완성된 폴리곤을 삭제하지 않습니다.');
+}
 function zoomBy(v){if(!image)return;const r=stage.getBoundingClientRect(),x=r.width/2,y=r.height/2,p=[(x-ox)/zoom,(y-oy)/zoom];zoom=Math.max(.05,Math.min(15,zoom*v));ox=x-p[0]*zoom;oy=y-p[1]*zoom;draw()}
 function keyName(e){if(e.code==='Space')return 'Space';if(e.code==='Equal'||e.code==='NumpadAdd')return '+';if(e.code==='Minus'||e.code==='NumpadSubtract')return '-';if(/^Key[A-Z]$/.test(e.code))return e.code.slice(3);return e.key}
 
@@ -70,7 +73,7 @@ window.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(
 if(mod&&(k==='Z'||k==='z')){e.preventDefault();if(e.shiftKey)$('redo').click();else $('undo').click();return}
 if(mod&&(k==='Y'||k==='y')){e.preventDefault();$('redo').click();return}
 if(mod||e.altKey)return;
-const actions={I:()=>setMode('polygon'),O:()=>setMode('edit'),P:()=>setMode('delete'),Q:()=>$('finish').click(),W:finishAngular,E:eraseLast,Escape:()=>{if(draft.length){remember();draft=[];draw()}else setMode('edit')},R:()=>removeVertex(hover),Delete:()=>{if(polygon.length){remember();polygon=[];draw()}},'0':fit,'+':()=>zoomBy(1.2),'-':()=>zoomBy(1/1.2)};
+const actions={I:()=>setMode('polygon'),O:()=>setMode('edit'),P:()=>setMode('delete'),Q:()=>$('finish').click(),E:eraseLast,Escape:()=>{if(draft.length){remember();draft=[];draw()}else setMode('edit')},R:()=>removeVertex(hover),Delete:()=>{if(polygon.length){remember();polygon=[];draw()}},'0':fit,'+':()=>zoomBy(1.2),'-':()=>zoomBy(1/1.2)};
 if(k==='Space'){e.preventDefault();spaceHeld=true;return}if(k==='S'){e.preventDefault();sHeld=true;return}if(actions[k]){e.preventDefault();if(!e.repeat)actions[k]()}}
 );
 window.addEventListener('keyup',e=>{const k=keyName(e);if(k==='Space')spaceHeld=false;if(k==='S'){sHeld=false;freehandLast=null}});
