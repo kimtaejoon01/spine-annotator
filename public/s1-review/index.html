@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S1 Expert Annotation</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}small,.muted{color:#8b949e}
+.layout{display:grid;grid-template-columns:260px minmax(380px,1fr) 290px;height:calc(100vh - 64px)}aside{overflow:auto;padding:16px;background:#10151c}aside:first-child{border-right:1px solid #30363d}aside:last-child{border-left:1px solid #30363d}
+section{margin-bottom:20px}h2{font-size:13px;margin:0 0 10px;color:#aeb9c5}button,input,select,textarea{font:inherit}button,select,input[type=text],textarea{background:#21262d;color:#e6edf3;border:1px solid #3d444d;border-radius:7px;padding:8px;min-height:34px}button{cursor:pointer}button:disabled{opacity:.4;cursor:default}button.active{background:#145a50;border-color:#26c7a4}button.primary{background:#196a53;border-color:#2bd8a4}button:hover:not(:disabled){filter:brightness(1.2)}input[type=text],textarea{width:100%}textarea{min-height:95px;resize:vertical}.stack{display:grid;gap:9px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.row>*{flex-shrink:0}.choice{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+#fileList{display:grid;gap:3px;max-height:48vh;overflow:auto}#fileList button{text-align:left;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#fileList button.chosen{border-color:#29d6a7;background:#16443b}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;background:#050709}.tools{padding:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #30363d}.tools label{font-size:13px}
+#stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;cursor:crosshair}canvas{width:100%;height:100%;display:block}
+#status{min-height:40px;padding:10px 12px;font-size:12px;color:#b0becb;border-top:1px solid #30363d}
+.note{font-size:12px;color:#aeb9c5;line-height:1.6}.pill{font-size:11px;background:#30363d;padding:4px 7px;border-radius:5px}
+@media(max-width:1000px){.layout{grid-template-columns:220px minmax(350px,1fr)}aside:last-child{grid-column:1/-1;border-top:1px solid #30363d}.layout{height:auto}main{height:70vh}}@media(max-width:650px){.layout{display:flex;flex-direction:column}main{height:65vh}aside{max-height:35vh}}
+</style></head><body>
+<header><div><h1>S1 Expert Annotation</h1><small>교수님 전용 · 기존 라벨과 별도 저장</small></div><div class="row"><span id="position" class="pill">0 / 0</span><button id="prev">이전</button><button id="next">다음</button><a href="/annotate" style="color:#9dc6ff">Annotator</a></div></header>
+<div class="layout"><aside><section class="stack"><h2>영상 불러오기</h2><label class="note">X-ray 폴더 연결 <input id="folder" type="file" accept="image/*" webkitdirectory multiple style="width:100%"></label><label class="note">개별 X-ray 선택 <input id="files" type="file" accept="image/png,image/jpeg,image/bmp,image/tiff,image/webp" multiple style="width:100%"></label><input id="search" type="text" placeholder="파일명 검색"><div id="count" class="note">폴더를 선택하세요</div></section><section><h2>파일 목록</h2><div id="fileList"></div></section></aside>
+<main><div class="tools">
+<button id="polygon" class="active">S1 폴리곤 그리기</button><button id="endplate">S1 상종판 (2점)</button><button id="edit">점 수정/이동</button><button id="pan">화면 이동</button><button id="finish">폴리곤 완료</button><button id="undo">되돌리기</button><button id="reset">교수님 라벨 초기화</button>
+<label><input id="showOriginal" type="checkbox" checked> 기존 폴리곤 표시</label>
+<label><input id="showExpert" type="checkbox" checked> 교수님 폴리곤 표시</label>
+<label><input id="showEndplate" type="checkbox" checked> 상종판 표시</label>
+<button id="fit">화면 맞춤</button></div>
+<div id="stage"><canvas id="canvas"></canvas></div><div id="status">영상 폴더를 선택하면 서버의 기존 라벨을 파일명으로 불러옵니다.</div></main>
+<aside><section class="stack"><h2>검수 기록</h2><div class="note" id="filename">선택한 영상 없음</div>
+<label class="note">교수님/검수자 이름 <input id="reviewer" type="text" value="" placeholder="검수자 이름"></label>
+<label class="note">판정 <select id="decision"><option value="pending">미완료</option><option value="approved">적합</option><option value="corrected">수정 완료</option><option value="unreadable">판독 불가</option></select></label>
+<label class="note">기준 및 설명 <textarea id="notes" placeholder="S1 경계, 상종판 위치, 주의사항 등"></textarea></label>
+<button id="save" class="primary">교수님 검수 결과 저장</button><button id="download">현재 결과 JSON 다운로드</button>
+<div class="note" id="saved">아직 저장하지 않았습니다.</div></section>
+<section class="stack"><h2>표시 안내</h2><div class="note">기존 라벨: 회색 점선 · 교수님 S1: 청록 실선 · S1 상종판: 노랑</div>
+<div class="note">폴리곤: 꼭짓점을 클릭하여 추가 후 '폴리곤 완료' 또는 더블클릭. 수정: 꼭짓점 드래그. 상종판: 앞/뒤 끝점 순서로 두 점 클릭. 휠 확대/축소, 화면 이동 모드에서 드래그.</div>
+<div class="note">기존 라벨은 읽기 전용입니다. 교수님 라벨은 별도 테이블에 저장되며 기존 Annotator 라벨에 영향을 주지 않습니다.</div></section></aside></div>
+<script type="module" src="/s1-review/app.js"></script></body></html>
