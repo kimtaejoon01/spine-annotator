@@ -406,6 +406,10 @@ app.get('/annotate', (c) => {
               <input type="checkbox" id="humanLabelOverlayToggle" checked />
               <span>선/이름표 보기</span>
             </label>
+            <label class="checkbox-label" title="S1 종판의 선·끝점·이름표만 숨깁니다. 저장된 라벨은 유지됩니다.">
+              <input type="checkbox" id="s1EndplateVisibleToggle" checked />
+              <span>S1 종판 보기</span>
+            </label>
           </div>
           <div class="panel panel-full">
             <h3 class="panel-title">

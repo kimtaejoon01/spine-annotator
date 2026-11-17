@@ -1,5 +1,14 @@
 # Spine Annotator - 척추 X-ray 폴리곤 라벨링 앱
 
+## 브라우저 AI 분석
+
+기존 Annotator 상단의 **AI 자동 분석** → 같은 사이트 `/ai-web/`에서 실행합니다.
+모델 폴더를 선택하고 X-ray를 올리면 사용자 컴퓨터의 브라우저에서 척추 분할·번호·꼭지점·S1·대퇴골두를 분석합니다.
+터미널이나 별도 추론 서버가 필요하지 않습니다. 학습 가중치는 먼저 브라우저용으로 한 번 변환해야 합니다.
+사용법과 모델 준비: [AI_BROWSER_KO.md](AI_BROWSER_KO.md).
+
+기존 Python 실행 앱은 `start_ai.bat` / `bash start_ai.command`로 계속 사용할 수 있습니다: [AI_APP_KO.md](AI_APP_KO.md).
+
 ## 프로젝트 개요
 - **Name**: Spine Annotator
 - **Goal**: Whole spine X-ray 이미지에 척추체(vertebral body)를 폴리곤으로 라벨링하는 웹앱.

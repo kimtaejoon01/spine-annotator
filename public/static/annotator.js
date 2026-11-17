@@ -39,6 +39,7 @@ export class SpineAnnotator {
     // 오버레이 표시 상태
     this.aiMaskNodes = []
     this.aiMaskOpacity = 0.45
+    this.s1EndplateVisible = true
     this.humanLabelVisible = true
     this.labelOverlayVisible = true
     this.aiMaskOverlayVisible = true
@@ -423,6 +424,15 @@ export class SpineAnnotator {
   // ============================================================
   // 오버레이 표시 / AI mask
   // ============================================================
+  setS1EndplateVisible(visible) {
+    this.s1EndplateVisible = visible !== false
+    if (!this.s1EndplateVisible && this.polygons.some(p => p.id === this.selectedId && p.label === 'S1_SUP')) {
+      this.selectedId = null
+      this.clearEditHover()
+    }
+    this.renderPolygons()
+  }
+
   setHumanLabelVisible(visible) {
     this.humanLabelVisible = visible !== false
     window.__spineHumanLabelVisible = this.humanLabelVisible
@@ -996,7 +1006,10 @@ export class SpineAnnotator {
     if (!pos) return
 
     const poly = this.polygons.find(p => p.id === this.selectedId)
-    if (!poly) return
+    if (!poly || (this.s1EndplateVisible === false && poly.label === 'S1_SUP')) {
+      this.clearEditHover()
+      return
+    }
 
     // 화면 기준 임계값 (스케일 보정 → 이미지 좌표계)
     const scale = this.stage.scaleX()
@@ -1319,14 +1332,29 @@ export class SpineAnnotator {
   // 자동 라벨 할당 (Y좌표 위→아래)
   // ============================================================
   relabelAll() {
-    const autoPolygons = this.polygons.filter(p => !p.manualLabel && (!p.label || isSpineLabel(p.label) || String(p.label).startsWith('?')))
-    autoPolygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
-    autoPolygons.sort((a, b) => a._centroidY - b._centroidY)
-    const labels = generateLabels(this.startLabel, autoPolygons.length)
-    autoPolygons.forEach((p, i) => { p.label = labels[i] })
-
+    // Existing labels are annotations, not disposable sequence indices.
+    // Adding/deleting a polygon must not close intentional gaps or renumber saved work.
     this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
     this.polygons.sort((a, b) => a._centroidY - b._centroidY)
+    const spine = this.polygons.filter(p => LABELS.includes(p.label) || !p.label || String(p.label).startsWith('?'))
+    const used = new Set(spine.map(p => p.label).filter(label => LABELS.includes(label)))
+    for (let i = 0; i < spine.length; i++) {
+      const p = spine[i]
+      if (p.manualLabel || LABELS.includes(p.label)) continue
+      const above = spine.slice(0, i).reverse().find(q => LABELS.includes(q.label))
+      const below = spine.slice(i + 1).find(q => LABELS.includes(q.label))
+      let index = above ? LABELS.indexOf(above.label) + 1 : Math.max(0, LABELS.indexOf(this.startLabel))
+      // When inserting above existing annotations, use the immediate available predecessor.
+      if (!above && below) {
+        const blanks = spine.slice(i, spine.indexOf(below)).filter(q => !LABELS.includes(q.label)).length
+        index = LABELS.indexOf(below.label) - blanks
+      }
+      const limit = below ? LABELS.indexOf(below.label) : LABELS.length
+      while (index >= 0 && index < limit && used.has(LABELS[index])) index++
+      const label = index >= 0 && index < limit ? LABELS[index] : null
+      p.label = label || '?'
+      if (label) used.add(label)
+    }
   }
   setStartLabel(label) {
     this.startLabel = label
@@ -1407,7 +1435,8 @@ export class SpineAnnotator {
       return
     }
     poly.label = newLabel
-    this.normalizeVertebraLabelsByY({ anchorId: id, anchorLabel: newLabel, force: true })
+    poly.manualLabel = true
+    // A dropdown edit changes this annotation only; preserve gaps and other labels.
     this.renderPolygons()
     this.pushHistory()
     this.notifyPolygons()
@@ -1455,6 +1484,8 @@ export class SpineAnnotator {
     this.polyLayer.visible((this.humanLabelVisible !== false) && (this.__activeAnnotationMode || 'polygon') === 'polygon')
 
     this.polygons.forEach(poly => {
+      // Display only: retain the original annotation for saving and export.
+      if (this.s1EndplateVisible === false && poly.label === 'S1_SUP') return
       const color = getRegionColor(poly.label)
       const isSelected = poly.id === this.selectedId
 
@@ -1873,7 +1904,6 @@ export class SpineAnnotator {
     const hasMissingLabel = this.polygons.some(p => !p.label || p.label === '?')
     if (hasMissingLabel) {
       this.relabelAll()
-      this.normalizeVertebraLabelsByY({ force: false })
     } else {
       // 재지정 없이 시각적 위→아래 순서로만 정렬 (의도적 비연속 라벨 보존)
       this.polygons.forEach(p => { p._centroidY = computeCentroidY(p.points) })
@@ -1930,20 +1960,36 @@ export class SpineAnnotator {
   }
 
   snapshot() {
-    return JSON.stringify(this.polygons.map(p => ({
+    return JSON.stringify({ polygons: this.polygons.map(p => ({
       id: p.id,
       label: p.label,
       points: p.points.slice(),
       manualLabel: p.manualLabel === true,
       landmark: p.landmark === true,
-    })))
+      ...(p.shape ? { shape: p.shape } : {}),
+    })), landmarks: this.getLandmarks?.() || [] })
   }
 
   restore(snapshot) {
-    this.polygons = JSON.parse(snapshot)
+    const saved = JSON.parse(snapshot)
+    this.polygons = Array.isArray(saved) ? saved : saved.polygons
+    if (!Array.isArray(saved)) this.loadLandmarks?.(saved.landmarks || [])
     this.selectedId = null
     this.renderPolygons()
     this.notifyPolygons()
+  }
+
+  applyAiPrediction(polygons, landmarks) {
+    // One undo step restores both previous polygons (including circle/endplate shape)
+    // and landmarks. loadPolygons normally resets history for a new image.
+    const history = this.history.slice(0, this.historyIdx + 1)
+    const before = this.snapshot()
+    if (history[history.length - 1] !== before) history.push(before)
+    this.loadLandmarks?.(landmarks)
+    this.loadPolygons(polygons)
+    this.history = history
+    this.historyIdx = history.length - 1
+    this.pushHistory()
   }
 
   undo() {

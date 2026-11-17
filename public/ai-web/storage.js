@@ -1,0 +1,5 @@
+const DB='spine-browser-models',STORE='bundles'
+function database(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+export async function savedBundle(){const db=await database();try{return await new Promise((resolve,reject)=>{const t=db.transaction(STORE),r=t.objectStore(STORE).get('current');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}finally{db.close()}}
+export async function saveBundle(files){const db=await database();try{await new Promise((resolve,reject)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).put(Array.from(files),'current');t.oncomplete=resolve;t.onerror=t.onabort=()=>reject(t.error)})}finally{db.close()}}
+export async function clearBundle(){const db=await database();try{await new Promise((resolve,reject)=>{const t=db.transaction(STORE,'readwrite');t.objectStore(STORE).clear();t.oncomplete=resolve;t.onerror=t.onabort=()=>reject(t.error)})}finally{db.close()}}

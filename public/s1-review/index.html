@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S1 Expert Annotation</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid #30363d;background:#161b22}h1{font-size:18px;margin:0}small,.muted{color:#8b949e}
+.layout{display:grid;grid-template-columns:260px minmax(380px,1fr) 290px;height:calc(100vh - 64px)}aside{overflow:auto;padding:16px;background:#10151c}aside:first-child{border-right:1px solid #30363d}aside:last-child{border-left:1px solid #30363d}
+section{margin-bottom:20px}h2{font-size:13px;margin:0 0 10px;color:#aeb9c5}button,input,select,textarea{font:inherit}button,select,input[type=text],textarea{background:#21262d;color:#e6edf3;border:1px solid #3d444d;border-radius:7px;padding:8px;min-height:34px}button{cursor:pointer}button:disabled{opacity:.4;cursor:default}kbd{display:inline-block;min-width:24px;text-align:center;padding:2px 6px;background:#2a343f;border:1px solid #536170;border-bottom-width:2px;border-radius:5px;color:#f1f6fc;font-size:12px;font-weight:750}.help-card{background:#18232e;border:1px solid #3b5063;border-radius:10px;padding:12px;margin-bottom:12px}.help-card h3{font-size:13px;margin:0 0 10px;color:#eff5fd}.shortcut-grid{display:grid;grid-template-columns:76px 1fr;align-items:center;gap:9px 7px;font-size:12px}.shortcut-grid span{color:#d3e1eb}.hint-strong{color:#f3c768;font-weight:700}.help-card p{margin:5px 0;color:#b9c7d4;font-size:12px;line-height:1.6}button.active{background:#145a50;border-color:#26c7a4}button.primary{background:#196a53;border-color:#2bd8a4}button:hover:not(:disabled){filter:brightness(1.2)}input[type=text],textarea{width:100%}textarea{min-height:95px;resize:vertical}.stack{display:grid;gap:9px}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.row>*{flex-shrink:0}.choice{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+#fileList{display:grid;gap:3px;max-height:48vh;overflow:auto}#fileList button{text-align:left;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#fileList button.chosen{border-color:#29d6a7;background:#16443b}
+main{display:flex;flex-direction:column;min-width:0;min-height:0;background:#050709}.tools{padding:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #30363d}.tools label{font-size:13px}
+#stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;cursor:crosshair}canvas{width:100%;height:100%;display:block}
+#status{min-height:40px;padding:10px 12px;font-size:12px;color:#b0becb;border-top:1px solid #30363d}
+.note{font-size:12px;color:#aeb9c5;line-height:1.6}.pill{font-size:11px;background:#30363d;padding:4px 7px;border-radius:5px}
+@media(max-width:1000px){.layout{grid-template-columns:220px minmax(350px,1fr)}aside:last-child{grid-column:1/-1;border-top:1px solid #30363d}.layout{height:auto}main{height:70vh}}@media(max-width:650px){.layout{display:flex;flex-direction:column}main{height:65vh}aside{max-height:35vh}}
+.shortcut-help>h2{font-size:15px;color:#fff;padding:10px 12px;margin:0 0 12px;border-left:4px solid #858d97;border-radius:7px;background:#292e36;letter-spacing:.015em}
+.shortcut-help .help-card{box-shadow:0 3px 14px rgba(0,0,0,.22);border-width:1.5px}
+.shortcut-help .help-card h3{font-size:14px;font-weight:800;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,.14);margin-bottom:12px}
+.shortcut-help .shortcut-grid{grid-template-columns:84px minmax(0,1fr);font-size:13px;gap:11px 9px}
+.shortcut-help .shortcut-grid span{color:#f1f5fa;font-weight:600;line-height:1.4}
+.shortcut-help kbd{padding:5px 7px;font-size:12px;font-weight:800;white-space:nowrap;background:#111b27;border-color:#73859a;color:#fff}
+.shortcut-help .draw-card{background:#232d2e;border-color:#4f7774}
+.shortcut-help .draw-card h3{color:#b3c9c5}
+.shortcut-help .draw-card kbd{border-color:#718e8b;color:#d2e0dc}
+.shortcut-help .edit-card{background:#272f3b;border-color:#586b85}
+.shortcut-help .edit-card h3{color:#b6c5da}
+.shortcut-help .edit-card kbd{border-color:#71849d;color:#d4dce8}
+.shortcut-help .view-card{background:#34312c;border-color:#8f7f63}
+.shortcut-help .view-card h3{color:#d5c5a5}
+.shortcut-help .view-card kbd{border-color:#97866a;color:#e3d4b6}
+.shortcut-help .shortcut-grid .hint-strong{color:#d9d0b4;font-weight:800}
+.shortcut-help .help-card p{color:#e0e8f1;font-size:12px}
+.folder-picker{display:flex;flex-direction:column;justify-content:center;gap:6px;position:relative;min-height:94px;padding:14px 16px;background:#263441;border:2px solid #778a99;border-radius:11px;cursor:pointer;transition:background .15s,border-color .15s;text-align:center}
+.folder-picker:hover,.folder-picker:focus-within{background:#304355;border-color:#b2c2ce}
+.folder-picker-title{font-weight:800;font-size:17px;color:#f1f5f9}
+.folder-picker-desc{font-size:12px;color:#cad4dd}
+.folder-picker input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
+</style></head><body>
+<header><div><h1>S1 Expert Annotation</h1><small>교수님 전용 · 기존 라벨과 별도 저장</small></div><div class="row"><span id="position" class="pill">0 / 0</span><button id="prev">이전</button><button id="next">다음</button><a href="/annotate" style="color:#9dc6ff">Annotator</a></div></header>
+<div class="layout"><aside><section class="stack"><h2>영상 불러오기</h2><label class="folder-picker"><span class="folder-picker-title">📁 X-ray 폴더 연결</span><span class="folder-picker-desc">클릭하여 이미지가 있는 폴더 선택</span><input id="folder" type="file" accept="image/*" webkitdirectory multiple></label><label class="note">개별 X-ray 선택 <input id="files" type="file" accept="image/png,image/jpeg,image/bmp,image/tiff,image/webp" multiple style="width:100%"></label><input id="search" type="text" placeholder="파일명 검색"><div id="count" class="note">폴더를 선택하세요</div></section><section><h2>파일 목록</h2><div id="fileList"></div></section></aside>
+<main><div class="tools">
+<button id="polygon" class="active">그리기 I</button><button id="endplate">S1 상종판</button><button id="edit">편집 O</button><button id="deleteTool">삭제 P</button><button id="pan">이동 Space</button><button id="finish">폴리곤 완성 Q</button><button id="undo">되돌리기</button><button id="redo">다시 실행</button><button id="reset">교수님 라벨 초기화</button>
+<label><input id="showOriginal" type="checkbox" checked> 기존 폴리곤 표시</label>
+<label><input id="showExpert" type="checkbox" checked> 교수님 폴리곤 표시</label>
+<label><input id="showEndplate" type="checkbox" checked> 상종판 표시</label>
+<button id="fit">화면 맞춤</button></div>
+<div id="stage"><canvas id="canvas"></canvas></div><div id="status">영상 폴더를 선택하면 서버의 기존 라벨을 파일명으로 불러옵니다.</div></main>
+<aside><section class="stack"><h2>검수 기록</h2><div class="note" id="filename">선택한 영상 없음</div>
+<label class="note">교수님/검수자 이름 <input id="reviewer" type="text" value="" placeholder="검수자 이름"></label>
+<label class="note">판정 <select id="decision"><option value="pending">미완료</option><option value="approved">적합</option><option value="corrected">수정 완료</option><option value="unreadable">판독 불가</option></select></label>
+<label class="note">기준 및 설명 <textarea id="notes" placeholder="S1 경계, 상종판 위치, 주의사항 등"></textarea></label>
+<button id="save" class="primary">교수님 검수 결과 저장</button><button id="download">현재 결과 JSON 다운로드</button>
+<div class="note" id="saved">아직 저장하지 않았습니다.</div></section>
+<section class="shortcut-help"><h2>⌨ 조작 방법 · S1 라벨링</h2><div class="help-card draw-card"><h3>폴리곤 그리기</h3><div class="shortcut-grid"><kbd>I</kbd><span>그리기 모드</span><kbd>Q</kbd><span>폴리곤 완성</span><kbd>E</kbd><span class="hint-strong">그리는 중 마지막 점만 취소</span><kbd>S</kbd><span>누른 상태로 움직여 자유곡선</span><kbd>Esc</kbd><span>현재 그리기 취소</span></div></div><div class="help-card edit-card"><h3>편집 · 삭제</h3><div class="shortcut-grid"><kbd>O</kbd><span>점 선택 및 드래그</span><kbd>R</kbd><span>마우스 아래 꼭짓점 삭제</span><kbd>P</kbd><span>삭제 모드 (점 클릭)</span><kbd>Delete</kbd><span>완성된 S1 폴리곤 삭제</span><kbd>Ctrl+Z</kbd><span>되돌리기</span><kbd>Ctrl+Y</kbd><span>다시 실행</span></div><p>편집 모드에서 선 위를 누르면 점을 추가할 수 있습니다. 점을 마우스 오른쪽 버튼으로 누르거나 더블클릭해도 삭제할 수 있습니다.</p></div><div class="help-card view-card"><h3>화면 이동 · 보기</h3><div class="shortcut-grid"><kbd>Space</kbd><span>누르고 드래그해 화면 이동</span><kbd>0</kbd><span>화면 맞춤</span><kbd>휠 ↑</kbd><span>마우스 휠 위로: 확대</span><kbd>휠 ↓</kbd><span>마우스 휠 아래로: 축소</span></div><p>마우스 휠을 기본 확대·축소 조작으로 사용합니다. 키보드는 메모나 이름 입력 중에는 작동하지 않습니다.</p></div></section><section class="stack"><h2>표시 안내</h2><div class="note">기존 라벨: 회색 점선 · 교수님 S1: 청록 실선 · S1 상종판: 노랑</div>
+<div class="note">폴리곤: 꼭짓점을 클릭하여 추가 후 '폴리곤 완료' 또는 더블클릭. 수정: 꼭짓점 드래그. 상종판: 앞/뒤 끝점 순서로 두 점 클릭. 휠 확대/축소, 화면 이동 모드에서 드래그.</div>
+<div class="note">기존 라벨은 읽기 전용입니다. 교수님 라벨은 별도 테이블에 저장되며 기존 Annotator 라벨에 영향을 주지 않습니다.</div></section></aside></div>
+<script type="module" src="/s1-review/app.js"></script></body></html>

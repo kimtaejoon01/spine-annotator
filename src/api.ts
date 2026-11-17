@@ -72,6 +72,61 @@ api.post('/auth/check', async (c) => {
 // ----------------------------------------------------------------
 // 자동 종판 검수(리뷰) API — 교수님 수정본 + 메모
 // ----------------------------------------------------------------
+
+// S1 professor annotations are isolated from the ordinary labels and endplate review.
+api.get('/s1-expert', async c => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT filename,decision,reviewer,updated_at,version FROM s1_expert_review ORDER BY updated_at DESC').all()
+    return c.json({ok:true,items:results || []})
+  } catch (e:any) { return c.json({ok:false,error:e.message},500) }
+})
+api.get('/s1-expert/:filename', async c => {
+  const filename = c.req.param('filename')
+  try {
+    const row:any = await c.env.DB.prepare('SELECT * FROM s1_expert_review WHERE filename=?').bind(filename).first()
+    if (!row) return c.json({ok:true,exists:false})
+    return c.json({ok:true,exists:true,filename:row.filename,image_width:row.image_width,image_height:row.image_height,
+      polygon:JSON.parse(row.polygon_json),endplate:JSON.parse(row.endplate_json),decision:row.decision,
+      notes:row.notes,reviewer:row.reviewer,updated_at:row.updated_at,version:row.version})
+  } catch(e:any) { return c.json({ok:false,error:e.message},500) }
+})
+api.put('/s1-expert/:filename', async c => {
+  const filename=c.req.param('filename')
+  let b:any
+  try {b=await c.req.json()}catch{return c.json({ok:false,error:'Invalid JSON'},400)}
+  if (!filename || filename.length>255) return c.json({ok:false,error:'Invalid filename'},400)
+  const w=b.image_width,h=b.image_height
+  if (!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1||w>30000||h>30000)
+    return c.json({ok:false,error:'Invalid image dimensions'},400)
+  const validPoint=(p:any)=>Array.isArray(p)&&p.length===2&&p.every((v:any)=>typeof v==='number'&&Number.isFinite(v))&&p[0]>=0&&p[0]<w&&p[1]>=0&&p[1]<h
+  const polygon=b.polygon,endplate=b.endplate
+  if (!Array.isArray(polygon)||polygon.length>300||!polygon.every(validPoint)||(polygon.length>0&&polygon.length<3))
+    return c.json({ok:false,error:'Invalid S1 polygon'},400)
+  if (!Array.isArray(endplate)||endplate.length>2||!endplate.every(validPoint))
+    return c.json({ok:false,error:'Invalid S1 endplate'},400)
+  if (!['pending','approved','corrected','unreadable'].includes(b.decision))return c.json({ok:false,error:'Invalid decision'},400)
+  if (typeof b.notes!=='string'||b.notes.length>10000||typeof b.reviewer!=='string'||b.reviewer.length>200)
+    return c.json({ok:false,error:'Invalid notes/reviewer'},400)
+  const version=b.version
+  if (version!==null&&version!==undefined&&(!Number.isInteger(version)||version<0))
+    return c.json({ok:false,error:'Invalid version'},400)
+  const now=new Date().toISOString()
+  try {
+    const existing:any=await c.env.DB.prepare('SELECT version FROM s1_expert_review WHERE filename=?').bind(filename).first()
+    if(existing && version!==existing.version)return c.json({ok:false,error:'version_conflict',current_version:existing.version},409)
+    if(!existing && version!==null&&version!==undefined&&version!==0)return c.json({ok:false,error:'version_conflict',current_version:0},409)
+    if(existing){
+      const updated=await c.env.DB.prepare('UPDATE s1_expert_review SET image_width=?,image_height=?,polygon_json=?,endplate_json=?,decision=?,notes=?,reviewer=?,updated_at=?,version=version+1 WHERE filename=? AND version=?')
+        .bind(w,h,JSON.stringify(polygon),JSON.stringify(endplate),b.decision,b.notes,b.reviewer,now,filename,version).run()
+      if ((updated.meta?.changes || 0)!==1) return c.json({ok:false,error:'version_conflict'},409)
+    }else{
+      await c.env.DB.prepare('INSERT INTO s1_expert_review (filename,image_width,image_height,polygon_json,endplate_json,decision,notes,reviewer,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,1)')
+        .bind(filename,w,h,JSON.stringify(polygon),JSON.stringify(endplate),b.decision,b.notes,b.reviewer,now).run()
+    }
+    return c.json({ok:true,version:existing?version+1:1,updated_at:now})
+  }catch(e:any){return c.json({ok:false,error:e.message},500)}
+})
+
 api.get('/review/:filename', async (c) => {
   const filename = decodeURIComponent(c.req.param('filename'))
   try {

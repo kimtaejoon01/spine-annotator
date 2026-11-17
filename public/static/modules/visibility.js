@@ -5,6 +5,7 @@
    ================================================================ */
 
 const HUMAN_LABEL_VISIBLE_KEY = 'spine-annotator:human-label-visible'
+const S1_ENDPLATE_VISIBLE_KEY = 'spine-annotator:s1-endplate-visible'
 const LINE_NAME_VISIBLE_KEY = 'spine-annotator:label-overlay-visible'
 
 function loadBoolean(key, fallback = true) {
@@ -24,6 +25,7 @@ function saveBoolean(key, value) {
 
 export function loadVisibilityState() {
   return {
+    s1EndplateVisible: loadBoolean(S1_ENDPLATE_VISIBLE_KEY, true),
     humanLabelVisible: loadBoolean(HUMAN_LABEL_VISIBLE_KEY, true),
     lineNameVisible: loadBoolean(LINE_NAME_VISIBLE_KEY, true),
   }
@@ -44,6 +46,7 @@ export function applyVisibilityState(annotator, state) {
     annotator.labelOverlayVisible = state.lineNameVisible !== false
   }
 
+  annotator.setS1EndplateVisible?.(state.s1EndplateVisible !== false)
   annotator.renderPolygons?.()
   if (annotator.polyLayer) {
     // 랜드마크/종판 모드에서는 renderPolygons() 가 폴리곤 레이어를 숨기므로 그 결정을 덮어쓰지 않는다.
@@ -70,10 +73,12 @@ export function initVisibilityControls({ state, annotator }) {
   if (!state) return
 
   const saved = loadVisibilityState()
+  state.s1EndplateVisible = saved.s1EndplateVisible
   state.humanLabelVisible = saved.humanLabelVisible
   state.labelOverlayVisible = saved.lineNameVisible
   state.lineNameVisible = saved.lineNameVisible
 
+  const s1Checkbox = document.getElementById('s1EndplateVisibleToggle')
   const humanCheckbox = document.getElementById('toggleLabelOverlay')
   const lineNameCheckbox = document.getElementById('humanLabelOverlayToggle')
 
@@ -84,6 +89,8 @@ export function initVisibilityControls({ state, annotator }) {
   syncCheckbox(lineNameCheckbox, state.lineNameVisible)
 
   const applyAll = () => {
+    saveBoolean(S1_ENDPLATE_VISIBLE_KEY, state.s1EndplateVisible)
+    syncCheckbox(s1Checkbox, state.s1EndplateVisible)
     saveBoolean(HUMAN_LABEL_VISIBLE_KEY, state.humanLabelVisible)
     saveBoolean(LINE_NAME_VISIBLE_KEY, state.lineNameVisible)
     syncCheckbox(humanCheckbox, state.humanLabelVisible)
@@ -108,6 +115,14 @@ export function initVisibilityControls({ state, annotator }) {
       state.labelOverlayVisible = state.lineNameVisible
       applyAll()
     }, true)
+  }
+
+  if (s1Checkbox && !s1Checkbox.dataset.visibilityModuleBound) {
+    s1Checkbox.dataset.visibilityModuleBound = '1'
+    s1Checkbox.addEventListener('change', () => {
+      state.s1EndplateVisible = s1Checkbox.checked
+      applyAll()
+    })
   }
 
   applyAll()
