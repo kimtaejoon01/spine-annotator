@@ -12,6 +12,8 @@
     "/favicon.ico",
     "/ai-web",
     "/ai-web/*",
-    "/ai-models/*"
+    "/ai-models/*",
+    "/s1-review",
+    "/s1-review/*"
   ]
 }
