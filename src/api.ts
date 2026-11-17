@@ -116,8 +116,9 @@ api.put('/s1-expert/:filename', async c => {
     if(existing && version!==existing.version)return c.json({ok:false,error:'version_conflict',current_version:existing.version},409)
     if(!existing && version!==null&&version!==undefined&&version!==0)return c.json({ok:false,error:'version_conflict',current_version:0},409)
     if(existing){
-      await c.env.DB.prepare('UPDATE s1_expert_review SET image_width=?,image_height=?,polygon_json=?,endplate_json=?,decision=?,notes=?,reviewer=?,updated_at=?,version=version+1 WHERE filename=? AND version=?')
+      const updated=await c.env.DB.prepare('UPDATE s1_expert_review SET image_width=?,image_height=?,polygon_json=?,endplate_json=?,decision=?,notes=?,reviewer=?,updated_at=?,version=version+1 WHERE filename=? AND version=?')
         .bind(w,h,JSON.stringify(polygon),JSON.stringify(endplate),b.decision,b.notes,b.reviewer,now,filename,version).run()
+      if ((updated.meta?.changes || 0)!==1) return c.json({ok:false,error:'version_conflict'},409)
     }else{
       await c.env.DB.prepare('INSERT INTO s1_expert_review (filename,image_width,image_height,polygon_json,endplate_json,decision,notes,reviewer,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,1)')
         .bind(filename,w,h,JSON.stringify(polygon),JSON.stringify(endplate),b.decision,b.notes,b.reviewer,now).run()
